@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Master Bill Scheduler</title>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <style>
+        :root { --primary: #2c3e50; --header-blue: #3498db; --success: #27ae60; --danger: #e74c3c; }
+        body { font-family: -apple-system, sans-serif; background: #eef2f5; margin: 0; padding: 15px; padding-bottom: 80px; }
+        .card { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 500px; margin: auto; margin-bottom: 20px; }
+        h2 { font-size: 18px; color: var(--primary); margin-top: 0; text-align: center; }
+        label { font-size: 11px; font-weight: bold; color: #7f8c8d; text-transform: uppercase; margin-top: 10px; display: block; }
+        input, select, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid #ddd; box-sizing: border-box; font-size: 15px; }
+        .btn-save { background: var(--success); color: white; border: none; font-weight: 800; margin-top: 15px; }
+        .btn-back { background: #95a5a6; color: white; text-decoration: none; display: block; text-align: center; padding: 12px; border-radius: 10px; font-weight: bold; margin-top: 10px; }
+        .date-chip-container { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0; }
+        .date-chip { background: #d1d8e0; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 8px; }
+        .master-item { background: white; border-radius: 12px; margin-bottom: 15px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-left: 6px solid var(--header-blue); max-width: 500px; margin: auto; }
+        .item-main { padding: 15px; display: flex; justify-content: space-between; align-items: center; }
+        .btn-delete { background: var(--danger); color: white; width: auto; padding: 8px 12px; font-size: 11px; margin: 0; border: none; border-radius: 6px; font-weight: bold; }
+        .dates-list { background: #f9f9f9; padding: 10px 15px; border-top: 1px solid #eee; display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>Schedule New Bill</h2>
+        
+        <label>Vendor Name</label>
+        <input type="text" id="vName" placeholder="e.g. Verizon, Loan">
+        
+        <label>Amount</label>
+        <input type="number" id="vAmt" placeholder="0.00">
+        
+        <label>Frequency</label>
+        <select id="vType" onchange="toggleDateUI()">
+            <option value="recurring">Recurring (Every Month)</option>
+            <option value="seasonal">Seasonal (Specific Dates)</option>
+        </select>
+
+        <div id="dateSelectorArea">
+            <label id="dateLabel">Select Date</label>
+            <div style="display:flex; gap:5px;">
+                <input type="date" id="tempDate">
+                <button type="button" id="addBtn" onclick="addDateChip()" style="width:70px; margin:8px 0;">ADD</button>
+            </div>
+            <div id="chipContainer" class="date-chip-container"></div>
+        </div>
+
+        <button onclick="saveToMaster()" class="btn-save">SAVE & SYNC TO INDEX</button>
+        <a href="index.html" class="btn-back">← BACK TO TRACKER</a>
+    </div>
+
+    <h2 style="margin-top: 30px;">Scheduled Bills List</h2>
+    <div id="masterList"></div>
+
+<script>
+    const firebaseConfig = {
+        apiKey: "AIzaSyBsnuuEo8KSHb7taPQMpEJw8XkQVv3qW6k",
+        authDomain: "billtrackersync-88b7a.firebaseapp.com",
+        databaseURL: "https://billtrackersync-88b7a-default-rtdb.firebaseio.com",
+        projectId: "billtrackersync-88b7a",
+        storageBucket: "billtrackersync-88b7a.firebasestorage.app",
+        messagingSenderId: "93682434120",
+        appId: "1:93682434120:web:c3f3c3b968f975fd37d87d"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let selectedDates = [];
+    const monthShort = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    function toggleDateUI() {
+        const type = document.getElementById('vType').value;
+        const label = document.getElementById('dateLabel');
+        const addBtn = document.getElementById('addBtn');
+        
+        if(type === 'recurring') {
+            label.innerText = "Select Recurring Start Date";
+            addBtn.style.display = 'none';
+            selectedDates = [];
+            document.getElementById('chipContainer').innerHTML = '';
+        } else {
+            label.innerText = "Add Seasonal Dates One by One";
+            addBtn.style.display = 'block';
+        }
+    }
+
+    function addDateChip() {
+        const d = document.getElementById('tempDate').value;
+        if(!d) return;
+        if(!selectedDates.includes(d)) {
+            selectedDates.push(d);
+            renderChips();
+        }
+    }
+
+    function renderChips() {
+        const container = document.getElementById('chipContainer');
+        container.innerHTML = selectedDates.map((d, i) => `
+            <div class="date-chip">${d} <span onclick="selectedDates.splice(${i},1);renderChips();">✕</span></div>
+        `).join('');
+    }
+
+    function getWeekNumber(date) {
+        const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+        return Math.ceil((date.getDate() + firstDay) / 7);
+    }
+
+    async function saveToMaster() {
+        const name = document.getElementById('vName').value;
+        const amt = parseFloat(document.getElementById('vAmt').value);
+        const type = document.getElementById('vType').value;
+        const singleDate = document.getElementById('tempDate').value;
+
+        if (!name || isNaN(amt)) return alert("Please enter Vendor and Amount");
+
+        let datesToSync = [];
+        if (type === 'recurring') {
+            if(!singleDate) return alert("Select a date to set the recurring day");
+            const baseDate = new Date(singleDate + "T00:00:00");
+            const day = baseDate.getDate();
+            for (let m = 0; m < 12; m++) {
+                // Adjust for months with fewer days
+                const lastDayOfMonth = new Date(2025, m + 1, 0).getDate();
+                const actualDay = Math.min(day, lastDayOfMonth);
+                const d = new Date(2025, m, actualDay);
+                datesToSync.push(d.toISOString().split('T')[0]);
+            }
+        } else {
+            datesToSync = [...selectedDates];
+        }
+
+        const masterBill = { name, amt, type, dates: datesToSync };
+        await db.ref('master_schedule').push(masterBill);
+
+        // Sync to Index
+        for (let dateStr of datesToSync) {
+            const d = new Date(dateStr + "T00:00:00");
+            const wNum = getWeekNumber(d);
+            const ref = db.ref(`data/${d.getFullYear()}/${d.getMonth()}/w${wNum}/bills`);
+            await ref.push({ date: `${d.getDate()} ${monthShort[d.getMonth()]}`, ven: name, amt: amt, paid: false });
+        }
+
+        alert("Synced successfully!");
+        location.reload();
+    }
+
+    async function deleteMaster(id, vName) {
+        if(!confirm(`This will delete ALL entries of "${vName}" from the Index and the Master List. Continue?`)) return;
+
+        // 1. Remove from Master List
+        await db.ref('master_schedule/' + id).remove();
+
+        // 2. Global Index Clean-up (Loops through years/months)
+        const years = [2024, 2025, 2026];
+        for(let y of years) {
+            for(let m = 0; m < 12; m++) {
+                const monthRef = db.ref(`data/${y}/${m}`);
+                const snap = await monthRef.get();
+                if(snap.exists()) {
+                    const monthData = snap.val();
+                    for(let w in monthData) {
+                        if(monthData[w].bills) {
+                            for(let key in monthData[w].bills) {
+                                if(monthData[w].bills[key].ven === vName) {
+                                    await db.ref(`data/${y}/${m}/${w}/bills/${key}`).remove();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        alert("Bill wiped from Index and Master List.");
+    }
+
+    db.ref('master_schedule').on('value', snap => {
+        const listContainer = document.getElementById('masterList');
+        listContainer.innerHTML = '';
+        const data = snap.val();
+        if(!data) return;
+
+        Object.keys(data).forEach(key => {
+            const item = data[key];
+            const card = document.createElement('div');
+            card.className = 'master-item';
+            card.innerHTML = `
+                <div class="item-main">
+                    <div class="item-info">
+                        <div style="font-weight:800;">${item.name} ($${item.amt})</div>
+                        <div style="font-size:11px; color:#666;">${item.type.toUpperCase()}</div>
+                    </div>
+                    <button class="btn-delete" onclick="deleteMaster('${key}', '${item.name}')">DELETE ALL</button>
+                </div>
+            `;
+            listContainer.appendChild(card);
+        });
+    });
+</script>
+</body>
+</html>
