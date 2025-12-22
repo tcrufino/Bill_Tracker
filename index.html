@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Bill Tracker Pro Sync</title>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <style>
+        :root { 
+            --primary: #2c3e50; --header-blue: #3498db; --btn-blue: #2980b9;    
+            --success: #27ae60; --danger: #e74c3c; --vivid-green: #2ecc71; 
+        }
+        body { 
+            font-family: -apple-system, sans-serif; background: #eef2f5; margin: 0; padding: 10px;
+            overflow-x: hidden; width: 100vw; position: fixed; height: 100%; 
+        }
+        .scroll-container { height: 100%; overflow-y: auto; padding-bottom: 180px; box-sizing: border-box; }
+        .container { max-width: 500px; margin: auto; }
+        .controls { background: var(--primary); padding: 12px; border-radius: 12px; margin-bottom: 15px; display: flex; gap: 8px; }
+        select, input { padding: 10px; border-radius: 8px; border: 1px solid #ddd; font-size: 15px; width: 100%; box-sizing: border-box; background: white; }
+        .summary-view { background: white; padding: 15px; border-radius: 12px; margin-bottom: 15px; border-left: 5px solid var(--header-blue); }
+        .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; text-align: center; }
+        .week-block { background: white; border-radius: 15px; padding: 15px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .week-header { background: var(--header-blue); color: white; padding: 10px; border-radius: 8px; margin: -15px -15px 15px -15px; display: flex; justify-content: center; gap: 20px; font-weight: 600; font-size: 13px; }
+        .row { display: flex; gap: 4px; margin-bottom: 8px; align-items: center; width: 100%; }
+        .row.paid { background: var(--vivid-green) !important; border-radius: 8px; padding: 2px 0; }
+        .row.paid input, .row.paid select { background: transparent; border: 1px solid rgba(255,255,255,0.3); color: white; font-weight: bold; }
+        .col-date { flex: 0 0 65px; font-weight: 600; text-align: center; font-size: 12px; } 
+        .col-ven { flex: 1; font-weight: 500; height: 42px; }  
+        .col-amt { flex: 0 0 85px; font-weight: bold; text-align: right; height: 42px; }
+        .btn-pay { border: none; border-radius: 6px; color: white; background: var(--primary); width: 45px; height: 42px; font-size: 11px; font-weight: bold; }
+        .btn-pay.is-paid { background: white; color: var(--success); }
+        .btn-del { border: none; background: #f1f1f1; color: #ccc; width: 30px; height: 42px; border-radius: 6px; }
+        .btn-add { background: var(--btn-blue); width: 100%; padding: 12px; color: white; border: none; border-radius: 8px; font-weight: bold; margin: 8px 0; font-size: 13px; }
+        .weekly-balance-line { text-align: right; font-size: 15px; font-weight: 800; color: var(--primary); padding-top: 8px; margin-top: 5px; border-top: 1px solid #eee; }
+        .vendor-summary-card { background: #fff; border-radius: 15px; padding: 20px; margin-bottom: 40px; border-top: 5px solid var(--primary); }
+        .vendor-summary-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f1f1f1; font-size: 14px; }
+        .footer-nav { position: fixed; bottom: 0; left: 0; right: 0; background: var(--primary); color: white; padding: 18px; text-align: center; border-top: 4px solid var(--success); z-index: 1000; }
+        .balance { font-size: 28px; font-weight: 800; color: #2ecc71; }
+    </style>
+</head>
+<body>
+
+<div class="scroll-container">
+    <div class="container">
+        <div class="controls">
+            <select id="yearSelect" onchange="initApp()"></select>
+            <select id="monthSelect" onchange="initApp()"></select>
+        </div>
+        <div class="summary-view">
+            <div class="summary-grid">
+                <div><div style="font-size:11px; color:#7f8c8d;">TOTAL BILLS</div><div id="sumBills" style="color:var(--danger); font-weight:bold; font-size:18px;">$0.00</div></div>
+                <div><div style="font-size:11px; color:#7f8c8d;">TOTAL INCOME</div><div id="sumInc" style="color:var(--success); font-weight:bold; font-size:18px;">$0.00</div></div>
+            </div>
+        </div>
+        <div id="weeksContainer"></div>
+        <div class="vendor-summary-card">
+            <h2 style="font-size: 14px; text-align: center; color: var(--primary); margin-top:0;">MONTHLY SPENDING BY VENDOR</h2>
+            <div id="vendorSummaryList"></div>
+        </div>
+    </div>
+</div>
+
+<div class="footer-nav">
+    <div style="font-size:12px; opacity:0.8;">MONTHLY REMAINING BALANCE</div>
+    <div class="balance" id="totalBal">$0.00</div>
+</div>
+
+<script>
+    // --- FIREBASE SETUP ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyBsnuuEo8KSHb7taPQMpEJw8XkQVv3qW6k",
+        authDomain: "billtrackersync-88b7a.firebaseapp.com",
+        databaseURL: "https://billtrackersync-88b7a-default-rtdb.firebaseio.com",
+        projectId: "billtrackersync-88b7a",
+        storageBucket: "billtrackersync-88b7a.firebasestorage.app",
+        messagingSenderId: "93682434120",
+        appId: "1:93682434120:web:c3f3c3b968f975fd37d87d"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    function fNum(n) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+    function getWeekRanges(year, month) {
+        let result = [];
+        let firstDay = new Date(year, month, 1);
+        let lastDay = new Date(year, month + 1, 0);
+        let start = new Date(firstDay);
+        start.setDate(firstDay.getDate() - firstDay.getDay());
+        while (start <= lastDay) {
+            let end = new Date(start);
+            end.setDate(start.getDate() + 6);
+            result.push({ start: new Date(start), end: end });
+            start.setDate(start.getDate() + 7);
+        }
+        return result;
+    }
+
+    function initApp() {
+        const year = document.getElementById('yearSelect').value;
+        const month = document.getElementById('monthSelect').value;
+        const container = document.getElementById('weeksContainer');
+        
+        db.ref(`data/${year}/${month}`).on('value', (snapshot) => {
+            const cloudData = snapshot.val() || {};
+            container.innerHTML = '';
+            const weekRanges = getWeekRanges(parseInt(year), parseInt(month));
+
+            weekRanges.forEach((range, idx) => {
+                const wKey = `w${idx+1}`;
+                const rangeStr = `${months[range.start.getMonth()].substring(0,3)} ${range.start.getDate()} - ${months[range.end.getMonth()].substring(0,3)} ${range.end.getDate()}`;
+                let dateOpts = '';
+                for(let d = new Date(range.start); d <= range.end; d.setDate(d.getDate()+1)) {
+                    let label = `${d.getDate()} ${months[d.getMonth()].substring(0,3)}`;
+                    dateOpts += `<option value="${label}">${label}</option>`;
+                }
+
+                const data = cloudData[wKey] || { bills: [{}], budgets: [{}] };
+
+                container.innerHTML += `
+                    <div class="week-block" id="block-${wKey}">
+                        <div class="week-header"><span>WEEK ${idx+1}</span><span>${rangeStr}</span></div>
+                        <h3 style="font-size:10px; color:#95a5a6; text-transform:uppercase;">Weekly Bills</h3>
+                        <div class="rows-area" data-type="bill" data-dates='${dateOpts}'>${renderRows(data.bills || [{}], 'bill', dateOpts)}</div>
+                        <button class="btn-add" onclick="addRow(this)">+ Add Bill</button>
+                        <h3 style="font-size:10px; color:#95a5a6; text-transform:uppercase;">Weekly Income</h3>
+                        <div class="rows-area" data-type="budget" data-dates='${dateOpts}'>${renderRows(data.budgets || [{}], 'budget', dateOpts)}</div>
+                        <button class="btn-add" onclick="addRow(this)">+ Add Income</button>
+                        <div class="weekly-balance-line">Week Balance: <span class="w-bal-total">$0.00</span></div>
+                    </div>`;
+            });
+            calculateUI();
+        });
+    }
+
+    function renderRows(arr, type, dateOpts) {
+        return arr.map(item => `
+            <div class="row ${item.paid ? 'paid' : ''}">
+                <select class="col-date" onchange="saveAll()">${dateOpts.replace(`value="${item.date}"`, `value="${item.date}" selected`)}</select>
+                ${type === 'bill' ? 
+                    `<input type="text" class="col-ven" placeholder="Vendor" value="${item.ven||''}" oninput="saveAll()">` : 
+                    `<select class="col-ven" onchange="saveAll()">
+                        <option value="">Source</option>
+                        <option ${item.ven=='Delivery'?'selected':''}>Delivery</option>
+                        <option ${item.ven=='T-Salary'?'selected':''}>T-Salary</option>
+                        <option ${item.ven=='R-Salary'?'selected':''}>R-Salary</option>
+                    </select>`
+                }
+                <input type="number" class="col-amt" placeholder="0" value="${item.amt||''}" oninput="saveAll()">
+                ${type==='bill'?`<button class="btn-pay ${item.paid?'is-paid':''}" onclick="togglePaid(this)">${item.paid?'Paid':'Pay'}</button>`:''}
+                <button class="btn-del" onclick="this.parentElement.remove();saveAll();">✕</button>
+            </div>`).join('');
+    }
+
+    function addRow(btn) {
+        const area = btn.previousElementSibling;
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = renderRows([{}], area.dataset.type, area.dataset.dates);
+        area.appendChild(tempDiv.firstElementChild);
+        saveAll();
+    }
+
+    function togglePaid(btn) {
+        btn.parentElement.classList.toggle('paid');
+        btn.innerText = btn.parentElement.classList.contains('paid') ? "Paid" : "Pay";
+        saveAll();
+    }
+
+    function saveAll() {
+        const year = document.getElementById('yearSelect').value;
+        const month = document.getElementById('monthSelect').value;
+        let exportData = {};
+        
+        document.querySelectorAll('.week-block').forEach(block => {
+            const wKey = block.id.replace('block-', '');
+            exportData[wKey] = { bills: [], budgets: [] };
+            block.querySelectorAll('.row').forEach(row => {
+                const type = row.parentElement.dataset.type;
+                const data = { 
+                    date: row.querySelector('.col-date').value, 
+                    ven: row.querySelector('.col-ven').value, 
+                    amt: parseFloat(row.querySelector('.col-amt').value) || 0, 
+                    paid: row.classList.contains('paid') 
+                };
+                if(type === 'bill') exportData[wKey].bills.push(data);
+                else exportData[wKey].budgets.push(data);
+            });
+        });
+        db.ref(`data/${year}/${month}`).set(exportData);
+    }
+
+    function calculateUI() {
+        let mBill = 0, mInc = 0;
+        let vMap = {};
+        document.querySelectorAll('.week-block').forEach(block => {
+            let wB = 0, wI = 0;
+            block.querySelectorAll('.row').forEach(row => {
+                const amt = parseFloat(row.querySelector('.col-amt').value) || 0;
+                const ven = row.querySelector('.col-ven').value;
+                if(row.parentElement.dataset.type === 'bill') { 
+                    wB += amt; 
+                    if(ven) vMap[ven] = (vMap[ven] || 0) + amt;
+                } else { wI += amt; }
+            });
+            block.querySelector('.w-bal-total').innerText = "$" + fNum(wI - wB);
+            mBill += wB; mInc += wI;
+        });
+        document.getElementById('sumBills').innerText = "$" + fNum(mBill);
+        document.getElementById('sumInc').innerText = "$" + fNum(mInc);
+        document.getElementById('totalBal').innerText = "$" + fNum(mInc - mBill);
+        
+        const summaryList = document.getElementById('vendorSummaryList');
+        summaryList.innerHTML = Object.keys(vMap).length ? '' : '<div style="text-align:center; color:#999; font-size:12px; padding:10px;">No bills yet</div>';
+        Object.keys(vMap).sort((a,b) => vMap[b] - vMap[a]).forEach(v => {
+            summaryList.innerHTML += `<div class="vendor-summary-row"><span>${v}</span><span style="font-weight:700; color:var(--danger);">$${fNum(vMap[v])}</span></div>`;
+        });
+    }
+
+    window.onload = () => {
+        const ys = document.getElementById('yearSelect');
+        const ms = document.getElementById('monthSelect');
+        for(let y=2024; y<=2030; y++) ys.innerHTML += `<option value="${y}">${y}</option>`;
+        months.forEach((m, i) => ms.innerHTML += `<option value="${i}">${m}</option>`);
+        const today = new Date();
+        ys.value = today.getFullYear(); ms.value = today.getMonth();
+        initApp();
+    };
+</script>
+</body>
+</html>
