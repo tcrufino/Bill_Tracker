@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Master Bill Scheduler</title>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <style>
+        :root { --primary: #2c3e50; --header-blue: #3498db; --success: #27ae60; --danger: #e74c3c; }
+        body { font-family: -apple-system, sans-serif; background: #eef2f5; margin: 0; padding: 15px; padding-bottom: 50px; }
+        .card { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 500px; margin: auto; margin-bottom: 20px; }
+        h2 { font-size: 18px; color: var(--primary); margin-top: 0; text-align: center; }
+        label { font-size: 12px; font-weight: bold; color: #7f8c8d; display: block; margin-top: 10px; }
+        input, select, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid #ddd; box-sizing: border-box; font-size: 15px; }
+        button { background: var(--header-blue); color: white; font-weight: bold; border: none; cursor: pointer; transition: 0.2s; }
+        button:active { transform: scale(0.98); }
+        
+        .date-chip-container { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0; }
+        .date-chip { background: #ecf0f1; padding: 5px 10px; border-radius: 20px; font-size: 12px; display: flex; align-items: center; gap: 5px; border: 1px solid #bdc3c7; }
+        .date-chip span { color: var(--danger); font-weight: bold; cursor: pointer; }
+
+        .master-list-item { background: white; padding: 15px; border-radius: 12px; margin-bottom: 10px; border-left: 5px solid var(--header-blue); display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .item-info { flex: 1; }
+        .item-name { font-weight: bold; font-size: 16px; display: block; }
+        .item-meta { font-size: 12px; color: #7f8c8d; }
+        .btn-del-master { background: #f8d7da; color: #721c24; width: auto; padding: 8px 12px; font-size: 12px; margin: 0; }
+        .nav-link { text-align: center; display: block; margin-top: 20px; color: var(--header-blue); text-decoration: none; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>Schedule New Bill</h2>
+        
+        <label>Vendor Name</label>
+        <input type="text" id="vName" placeholder="e.g. Verizon, Loan, Rent">
+        
+        <label>Amount</label>
+        <input type="number" id="vAmt" placeholder="0.00">
+        
+        <label>Bill Type</label>
+        <select id="vType" onchange="toggleDateUI()">
+            <option value="recurring">Recurring (Every Month)</option>
+            <option value="seasonal">Seasonal (Specific Dates)</option>
+        </select>
+
+        <div id="dateSelectorArea" style="display:none;">
+            <label>Select Dates</label>
+            <input type="date" id="tempDate">
+            <button type="button" onclick="addDateChip()" style="background:#95a5a6; padding:8px;">+ Add This Date</button>
+            <div id="chipContainer" class="date-chip-container"></div>
+        </div>
+
+        <button onclick="saveToMaster()" style="background:var(--success); margin-top:15px;">SAVE SCHEDULED BILL</button>
+        <a href="index.html" class="nav-link">← Back to Tracker Index</a>
+    </div>
+
+    <h2 style="margin-top: 30px;">Scheduled Bills List</h2>
+    <div id="masterList" style="max-width:500px; margin:auto;">
+        </div>
+
+<script>
+    const firebaseConfig = {
+        apiKey: "AIzaSyBsnuuEo8KSHb7taPQMpEJw8XkQVv3qW6k",
+        authDomain: "billtrackersync-88b7a.firebaseapp.com",
+        databaseURL: "https://billtrackersync-88b7a-default-rtdb.firebaseio.com",
+        projectId: "billtrackersync-88b7a",
+        storageBucket: "billtrackersync-88b7a.firebasestorage.app",
+        messagingSenderId: "93682434120",
+        appId: "1:93682434120:web:c3f3c3b968f975fd37d87d"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let selectedDates = [];
+    const monthShort = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    function toggleDateUI() {
+        document.getElementById('dateSelectorArea').style.display = 
+            document.getElementById('vType').value === 'seasonal' ? 'block' : 'none';
+    }
+
+    function addDateChip() {
+        const d = document.getElementById('tempDate').value;
+        if(!d) return;
+        if(!selectedDates.includes(d)) {
+            selectedDates.push(d);
+            renderChips();
+        }
+    }
+
+    function renderChips() {
+        const container = document.getElementById('chipContainer');
+        container.innerHTML = selectedDates.map((d, i) => `
+            <div class="date-chip">${d} <span onclick="selectedDates.splice(${i},1);renderChips();">✕</span></div>
+        `).join('');
+    }
+
+    function getWeekNumber(date) {
+        const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+        return Math.ceil((date.getDate() + firstDay) / 7);
+    }
+
+    async function saveToMaster() {
+        const name = document.getElementById('vName').value;
+        const amt = parseFloat(document.getElementById('vAmt').value);
+        const type = document.getElementById('vType').value;
+
+        if (!name || isNaN(amt)) return alert("Fill Name and Amount");
+
+        const masterBill = {
+            name: name,
+            amt: amt,
+            type: type,
+            dates: type === 'seasonal' ? selectedDates : ['Monthly Recurring']
+        };
+
+        // 1. Save to Master List for display
+        await db.ref('master_schedule').push(masterBill);
+
+        // 2. Sync to Index
+        if (type === 'recurring') {
+            for (let m = 0; m < 12; m++) {
+                await db.ref(`data/2025/${m}/w1/bills`).push({
+                    date: "1st " + monthShort[m],
+                    ven: name,
+                    amt: amt,
+                    paid: false
+                });
+            }
+        } else {
+            for (let dateStr of selectedDates) {
+                const d = new Date(dateStr + "T00:00:00");
+                const wNum = getWeekNumber(d);
+                await db.ref(`data/${d.getFullYear()}/${d.getMonth()}/w${wNum}/bills`).push({
+                    date: `${d.getDate()} ${monthShort[d.getMonth()]}`,
+                    ven: name,
+                    amt: amt,
+                    paid: false
+                });
+            }
+        }
+
+        alert("Bill saved and synced to index!");
+        location.reload();
+    }
+
+    // Load Master List
+    db.ref('master_schedule').on('value', snap => {
+        const list = document.getElementById('masterList');
+        list.innerHTML = '';
+        const data = snap.val();
+        if(!data) {
+            list.innerHTML = '<p style="text-align:center; color:#999;">No scheduled bills yet.</p>';
+            return;
+        }
+        Object.keys(data).forEach(key => {
+            const item = data[key];
+            list.innerHTML += `
+                <div class="master-list-item">
+                    <div class="item-info">
+                        <span class="item-name">${item.name} - $${item.amt.toLocaleString()}</span>
+                        <span class="item-meta">${item.type.toUpperCase()} | ${item.dates.length} entries</span>
+                    </div>
+                    <button class="btn-del-master" onclick="deleteFromMaster('${key}')">DELETE</button>
+                </div>`;
+        });
+    });
+
+    function deleteFromMaster(id) {
+        if(confirm("Remove this from the Master List? (Note: already populated index items must be deleted manually on the index page if already created)")) {
+            db.ref('master_schedule/' + id).remove();
+        }
+    }
+</script>
+</body>
+</html>
