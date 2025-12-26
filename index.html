@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Bill Tracker Sync</title>
+    <script type="importmap">
+    {
+      "imports": {
+        "firebase/app": "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js",
+        "firebase/database": "https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js"
+      }
+    }
+    </script>
+    <style>
+        :root { --primary: #2c3e50; --header-blue: #3498db; --success: #27ae60; --danger: #e74c3c; --paid-bg: #e8f5e9; --dark-navy: #34495e; --orange: #f39c12; }
+        body { font-family: -apple-system, sans-serif; background: #eef2f5; margin: 0; padding: 8px; padding-bottom: 110px; }
+        
+        /* AUTH PAGE */
+        #loginOverlay { position: fixed; inset: 0; background: var(--primary); z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; text-align: center; }
+        #loginOverlay input { padding: 15px; border-radius: 8px; border: none; width: 80%; max-width: 300px; margin: 15px 0; font-size: 18px; text-align: center; color: #333; }
+        #loginOverlay button { background: var(--header-blue); color: white; border: none; padding: 15px 40px; border-radius: 8px; font-weight: 800; cursor: pointer; }
+        
+        /* MAIN APP */
+        #appContent { display: none; }
+        .top-nav { background: var(--primary); padding: 10px; border-radius: 10px; display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
+        .btn-db-top { background: var(--orange); color: white; text-decoration: none; padding: 10px; border-radius: 6px; font-weight: 800; font-size: 10px; text-transform: uppercase; }
+        .top-nav select { flex: 1; padding: 8px; border-radius: 6px; border: none; font-size: 14px; font-weight: bold; height: 40px; }
+        
+        .summary-container { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+        .s-card { background: white; padding: 10px; border-radius: 12px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .s-val { font-size: 18px; font-weight: 800; }
+        
+        .week-box { background: white; border-radius: 12px; margin-bottom: 15px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .week-header { background: var(--header-blue); color: white; padding: 12px; font-weight: 800; font-size: 14px; display: flex; justify-content: space-between; }
+        .week-content { padding: 10px; }
+        
+        .section-label { font-size: 10px; font-weight: 800; color: #bdc3c7; text-transform: uppercase; margin: 12px 0 6px 0; border-bottom: 1px solid #eee; }
+        .row { display: flex; gap: 4px; margin-bottom: 8px; align-items: center; }
+        .row.paid-highlight { background-color: var(--paid-bg); border-radius: 8px; }
+        
+        .ven-in { flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; height: 38px; }
+        .amt-in { width: 85px; text-align: right; padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; height: 38px; }
+        
+        .btn-pay { background: var(--dark-navy); color: white; border: none; border-radius: 6px; width: 50px; height: 38px; font-weight: 800; font-size: 10px; cursor: pointer; }
+        .btn-pay.paid { background: var(--success); }
+        .btn-add-row { background: var(--header-blue); color: white; border: none; padding: 10px; border-radius: 8px; font-weight: 800; width: 100%; font-size: 11px; text-transform: uppercase; margin-top: 5px; }
+
+        .footer-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--primary); padding: 15px; text-align: center; border-radius: 15px 15px 0 0; }
+        .footer-bar span { font-size: 24px; font-weight: 800; color: #2ecc71; }
+    </style>
+</head>
+<body>
+
+    <div id="loginOverlay">
+        <h1>BILL TRACKER</h1>
+        <p>Access Secure Cloud Sync</p>
+        <input type="password" id="tokenInput" placeholder="Enter Token">
+        <button id="loginBtn">UNLOCK APP</button>
+    </div>
+
+    <div id="appContent">
+        <div class="top-nav">
+            <a href="database.html" class="btn-db-top">⚙️ MASTER</a>
+            <select id="yearSelect">
+                <option value="2025">2025</option><option value="2026">2026</option>
+                <option value="2027">2027</option><option value="2028">2028</option>
+                <option value="2029">2029</option><option value="2030">2030</option>
+            </select>
+            <select id="monthSelect">
+                <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+                <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+                <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+                <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+            </select>
+        </div>
+
+        <div class="summary-container">
+            <div class="s-card"><div style="font-size:9px; color:#7f8c8d;">TOTAL BILLS</div><div class="s-val" id="totalBills" style="color:var(--danger)">$0.00</div></div>
+            <div class="s-card"><div style="font-size:9px; color:#7f8c8d;">TOTAL INCOME</div><div class="s-val" id="totalIncome" style="color:var(--success)">$0.00</div></div>
+        </div>
+
+        <div id="weeksContainer"></div>
+
+        <div class="footer-bar">
+            <div style="color:#bdc3c7; font-size:10px; margin-bottom:5px;">MONTHLY REMAINING</div>
+            <span id="monthlyRemaining">$0.00</span>
+        </div>
+    </div>
+
+<script type="module">
+    import { initializeApp } from "firebase/app";
+    import { getDatabase, ref, onValue, push, update } from "firebase/database";
+
+    // Config with your database details
+    const firebaseConfig = { 
+        apiKey: "AIzaSyBsnuuEo8KSHb7taPQMpEJw8XkQVv3qW6k", 
+        authDomain: "billtrackersync-88b7a.firebaseapp.com", 
+        databaseURL: "https://billtrackersync-88b7a-default-rtdb.firebaseio.com", 
+        projectId: "billtrackersync-88b7a", 
+        appId: "1:93682434120:web:c3f3c3b968f975fd37d87d" 
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    let globalData = {};
+
+    // Check if already logged in on reload
+    window.onload = () => {
+        const savedToken = localStorage.getItem('trackerToken');
+        if (savedToken === "Olivia28") {
+            initApp();
+        }
+    };
+
+    document.getElementById('loginBtn').onclick = () => {
+        const token = document.getElementById('tokenInput').value;
+        if(token === "Olivia28") {
+            localStorage.setItem('trackerToken', token);
+            initApp();
+        } else { alert("Incorrect Token"); }
+    };
+
+    function initApp() {
+        document.getElementById('loginOverlay').style.display = 'none';
+        document.getElementById('appContent').style.display = 'block';
+        
+        // Listen to the 'data' node
+        onValue(ref(db, 'data'), (snapshot) => {
+            globalData = snapshot.val() || {};
+            renderUI();
+        }, (error) => {
+            console.error("Firebase Read Error: ", error);
+            alert("Permission denied. Ensure your Firebase Rules are set correctly.");
+        });
+    }
+
+    function renderUI() {
+        const year = document.getElementById('yearSelect').value;
+        const month = document.getElementById('monthSelect').value;
+        const monthData = (globalData[year] && globalData[year][month]) ? globalData[year][month] : {};
+        
+        const container = document.getElementById('weeksContainer');
+        container.innerHTML = '';
+        let mBills = 0, mIncome = 0;
+
+        [1,2,3,4,5].forEach(num => {
+            const wId = `w${num}`;
+            const w = monthData[wId] || {};
+            let bHtml = '', iHtml = '';
+
+            // Map Bills
+            if(w.bills) Object.entries(w.bills).forEach(([id, b]) => {
+                mBills += parseFloat(b.amt || 0);
+                bHtml += `<div class="row ${b.paid?'paid-highlight':''}">
+                    <input class="ven-in" type="text" value="${b.ven}" onchange="window.upd('${year}','${month}','${wId}','bills','${id}','ven',this.value)">
+                    <input class="amt-in" type="text" value="${b.amt}" onchange="window.upd('${year}','${month}','${wId}','bills','${id}','amt',this.value)">
+                    <button class="btn-pay ${b.paid?'paid':''}" onclick="window.tgl('${year}','${month}','${wId}','${id}',${b.paid})">${b.paid?'PAID':'PAY'}</button>
+                </div>`;
+            });
+
+            // Map Income
+            if(w.income) Object.entries(w.income).forEach(([id, inc]) => {
+                mIncome += parseFloat(inc.amt || 0);
+                iHtml += `<div class="row">
+                    <input class="ven-in" style="border-left: 4px solid var(--success)" type="text" value="${inc.ven}" onchange="window.upd('${year}','${month}','${wId}','income','${id}','ven',this.value)">
+                    <input class="amt-in" type="text" value="${inc.amt}" onchange="window.upd('${year}','${month}','${wId}','income','${id}','amt',this.value)">
+                </div>`;
+            });
+
+            container.innerHTML += `
+                <div class="week-box">
+                    <div class="week-header">WEEK ${num}</div>
+                    <div class="week-content">
+                        <div class="section-label">Weekly Bills</div>${bHtml}
+                        <button class="btn-add-row" onclick="window.add('${year}','${month}','${wId}','bills')">+ Add Bill Row</button>
+                        <div class="section-label">Weekly Income</div>${iHtml}
+                        <button class="btn-add-row" style="background:var(--success)" onclick="window.add('${year}','${month}','${wId}','income')">+ Add Income Row</button>
+                    </div>
+                </div>`;
+        });
+
+        document.getElementById('totalBills').innerText = `$${mBills.toFixed(2)}`;
+        document.getElementById('totalIncome').innerText = `$${mIncome.toFixed(2)}`;
+        document.getElementById('monthlyRemaining').innerText = `$${(mIncome - mBills).toFixed(2)}`;
+    }
+
+    // Window global functions for the HTML buttons
+    window.upd = (y, m, w, type, id, f, v) => update(ref(db, `data/${y}/${m}/${w}/${type}/${id}`), {[f]: v});
+    window.tgl = (y, m, w, id, c) => update(ref(db, `data/${y}/${m}/${w}/bills/${id}`), {paid: !c});
+    window.add = (y, m, w, type) => push(ref(db, `data/${y}/${m}/${w}/${type}`), {ven: "New Item", amt: "0.00", paid: false});
+
+    document.getElementById('yearSelect').onchange = renderUI;
+    document.getElementById('monthSelect').onchange = renderUI;
+</script>
+</body>
+</html>
