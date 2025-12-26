@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Bill Tracker Sync Pro</title>
+    <script type="importmap">
+    {
+      "imports": {
+        "firebase/app": "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js",
+        "firebase/database": "https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js"
+      }
+    }
+    </script>
+    <style>
+        :root { --primary: #2c3e50; --header-blue: #3498db; --success: #27ae60; --danger: #e74c3c; --paid-bg: #e8f5e9; --dark-navy: #34495e; --orange: #f39c12; }
+        body { font-family: -apple-system, sans-serif; background: #eef2f5; margin: 0; padding: 8px; padding-bottom: 110px; }
+        
+        /* LOGIN OVERLAY */
+        #loginOverlay { position: fixed; inset: 0; background: var(--primary); z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; padding: 20px; text-align: center; }
+        #loginOverlay input { padding: 15px; border-radius: 8px; border: none; width: 80%; max-width: 300px; margin: 15px 0; font-size: 18px; text-align: center; color: #333; }
+        #loginOverlay button { background: var(--header-blue); color: white; border: none; padding: 15px 40px; border-radius: 8px; font-weight: 800; font-size: 16px; cursor: pointer; }
+        
+        /* APP UI */
+        #appContent { display: none; }
+        .top-nav { background: var(--primary); padding: 10px; border-radius: 10px; display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
+        .btn-db-top { background: var(--orange); color: white; text-decoration: none; padding: 0 8px; border-radius: 6px; font-weight: 800; font-size: 10px; height: 38px; display: flex; align-items: center; text-align: center; flex: 0 0 80px; text-transform: uppercase; }
+        .top-nav select { flex: 1; padding: 8px; border-radius: 6px; border: none; font-size: 14px; font-weight: bold; height: 38px; }
+        
+        .summary-container { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+        .s-card { background: white; padding: 10px; border-radius: 12px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-left: 4px solid #3498db; }
+        .s-label { font-size: 9px; text-transform: uppercase; color: #7f8c8d; font-weight: 800; }
+        .s-val { font-size: 18px; font-weight: 800; }
+        
+        .week-box { background: white; border-radius: 12px; margin-bottom: 12px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .week-header { background: var(--header-blue); color: white; padding: 8px 12px; font-weight: 800; font-size: 12px; display: flex; justify-content: space-between; }
+        .week-content { padding: 10px; }
+        
+        .section-label { font-size: 10px; font-weight: 800; color: #bdc3c7; text-transform: uppercase; margin: 10px 0 5px 0; border-bottom: 1px solid #eee; }
+        .row { display: flex; gap: 4px; margin-bottom: 6px; align-items: center; width: 100%; padding: 4px 2px; border-radius: 8px; box-sizing: border-box; }
+        .row.paid-highlight { background-color: var(--paid-bg); border: 1px solid #c8e6c9; }
+        
+        .ven-in { flex: 1; min-width: 0; font-size: 13px; padding: 8px 4px; height: 38px; border: 1px solid #ddd; border-radius: 6px; }
+        .amt-wrapper { position: relative; width: 85px; flex-shrink: 0; }
+        .amt-wrapper::before { content: '$'; position: absolute; left: 5px; top: 50%; transform: translateY(-50%); font-size: 12px; color: #7f8c8d; }
+        .amt-in { width: 100%; font-size: 13px; text-align: right; height: 38px; padding-right: 5px; padding-left: 15px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+        
+        .btn-pay { background: var(--dark-navy); color: white; border: none; border-radius: 6px; font-weight: 800; font-size: 10px; width: 44px; height: 38px; flex-shrink: 0; cursor: pointer; }
+        .btn-pay.paid { background: var(--success); }
+        .btn-del { color: #ccc; border: none; background: none; font-size: 18px; width: 20px; flex-shrink: 0; cursor: pointer; }
+        .btn-add { background: #eee; color: #7f8c8d; border: 1px dashed #ccc; padding: 8px; border-radius: 8px; font-weight: 800; width: 100%; font-size: 10px; text-transform: uppercase; margin-bottom: 5px; }
+        
+        .footer-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--primary); padding: 12px; text-align: center; border-radius: 12px 12px 0 0; z-index: 100; }
+        .foot-info label { color: #bdc3c7; font-size: 9px; text-transform: uppercase; display: block; }
+        .foot-info span { font-size: 22px; font-weight: 800; color: white; }
+    </style>
+</head>
+<body>
+
+    <div id="loginOverlay">
+        <h1>BILL TRACKER</h1>
+        <p>Access Secure Cloud Sync</p>
+        <input type="password" id="tokenInput" placeholder="Enter Token">
+        <button id="loginBtn">UNLOCK APP</button>
+    </div>
+
+    <div id="appContent">
+        <div class="top-nav">
+            <a href="database.html" class="btn-db-top">⚙️ MASTER DATABASE</a>
+            <select id="yearSelect">
+                <option value="2025">2025</option><option value="2026">2026</option>
+                <option value="2027">2027</option><option value="2028">2028</option>
+                <option value="2029">2029</option><option value="2030">2030</option>
+            </select>
+            <select id="monthSelect">
+                <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+                <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+                <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+                <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+            </select>
+        </div>
+
+        <div class="summary-container">
+            <div class="s-card"><div class="s-label">Total Bills</div><div class="s-val" id="totalBills" style="color: var(--danger);">$0.00</div></div>
+            <div class="s-card"><div class="s-label">Total Income</div><div class="s-val" id="totalIncome" style="color: var(--success);">$0.00</div></div>
+        </div>
+
+        <div id="weeksContainer"></div>
+
+        <div class="footer-bar">
+            <div class="foot-info"><label>Monthly Remaining</label><span id="monthlyRemaining">$0.00</span></div>
+        </div>
+    </div>
+
+<script type="module">
+    import { initializeApp } from "firebase/app";
+    import { getDatabase, ref, onValue, push, update, remove } from "firebase/database";
+
+    const firebaseConfig = { 
+        apiKey: "AIzaSyBsnuuEo8KSHb7taPQMpEJw8XkQVv3qW6k", 
+        authDomain: "billtrackersync-88b7a.firebaseapp.com", 
+        databaseURL: "https://billtrackersync-88b7a-default-rtdb.firebaseio.com", 
+        projectId: "billtrackersync-88b7a", 
+        appId: "1:93682434120:web:c3f3c3b968f975fd37d87d" 
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    let globalData = {};
+
+    // --- LOGIN ---
+    document.getElementById('loginBtn').onclick = () => {
+        if(document.getElementById('tokenInput').value === "Olivia28") {
+            localStorage.setItem('userAuth', 'true');
+            initApp();
+        } else { alert("Incorrect Token"); }
+    };
+
+    function initApp() {
+        if(localStorage.getItem('userAuth') === 'true') {
+            document.getElementById('loginOverlay').style.display = 'none';
+            document.getElementById('appContent').style.display = 'block';
+            startSync();
+        }
+    }
+
+    // --- REALTIME SYNC ---
+    function startSync() {
+        onValue(ref(db, 'data'), (snapshot) => {
+            globalData = snapshot.val() || {};
+            renderUI();
+        });
+    }
+
+    function renderUI() {
+        const year = document.getElementById('yearSelect').value;
+        const month = document.getElementById('monthSelect').value;
+        const monthData = (globalData[year] && globalData[year][month]) ? globalData[year][month] : {};
+        
+        const container = document.getElementById('weeksContainer');
+        container.innerHTML = '';
+        let mBills = 0, mIncome = 0;
+
+        [1,2,3,4,5].forEach(num => {
+            const wId = `w${num}`;
+            const wData = monthData[wId] || {};
+            let bHtml = '', iHtml = '';
+
+            // Render Bills
+            if(wData.bills) {
+                Object.entries(wData.bills).forEach(([id, b]) => {
+                    mBills += parseFloat(b.amt || 0);
+                    bHtml += `<div class="row ${b.paid ? 'paid-highlight' : ''}">
+                        <input class="ven-in" type="text" value="${b.ven}" onchange="window.upd('${year}','${month}','${wId}','bills','${id}','ven',this.value)">
+                        <div class="amt-wrapper"><input class="amt-in" type="text" value="${b.amt}" onchange="window.upd('${year}','${month}','${wId}','bills','${id}','amt',this.value)"></div>
+                        <button class="btn-pay ${b.paid ? 'paid' : ''}" onclick="window.tgl('${year}','${month}','${wId}','${id}',${b.paid})">${b.paid?'PAID':'PAY'}</button>
+                        <button class="btn-del" onclick="window.del('${year}','${month}','${wId}','bills','${id}')">×</button>
+                    </div>`;
+                });
+            }
+
+            // Render Income
+            if(wData.income) {
+                Object.entries(wData.income).forEach(([id, inc]) => {
+                    mIncome += parseFloat(inc.amt || 0);
+                    iHtml += `<div class="row">
+                        <input class="ven-in" style="border-left:4px solid var(--success)" type="text" value="${inc.ven}" onchange="window.upd('${year}','${month}','${wId}','income','${id}','ven',this.value)">
+                        <div class="amt-wrapper"><input class="amt-in" type="text" value="${inc.amt}" onchange="window.upd('${year}','${month}','${wId}','income','${id}','amt',this.value)"></div>
+                        <button class="btn-del" onclick="window.del('${year}','${month}','wId','income','${id}')">×</button>
+                    </div>`;
+                });
+            }
+
+            container.innerHTML += `
+                <div class="week-box">
+                    <div class="week-header">WEEK ${num}</div>
+                    <div class="week-content">
+                        <div class="section-label">Bills</div>
+                        ${bHtml}
+                        <button class="btn-add" onclick="window.add('${year}','${month}','${wId}','bills')">+ Add Bill</button>
+                        <div class="section-label">Income</div>
+                        ${iHtml}
+                        <button class="btn-add" onclick="window.add('${year}','${month}','${wId}','income')">+ Add Income</button>
+                    </div>
+                </div>`;
+        });
+
+        document.getElementById('totalBills').innerText = `$${mBills.toFixed(2)}`;
+        document.getElementById('totalIncome').innerText = `$${mIncome.toFixed(2)}`;
+        document.getElementById('monthlyRemaining').innerText = `$${(mIncome - mBills).toFixed(2)}`;
+    }
+
+    // --- DATABASE ACTIONS ---
+    window.upd = (y, m, w, type, id, field, val) => update(ref(db, `data/${y}/${m}/${w}/${type}/${id}`), {[field]: val});
+    window.tgl = (y, m, w, id, curr) => update(ref(db, `data/${y}/${m}/${w}/bills/${id}`), {paid: !curr});
+    window.add = (y, m, w, type) => push(ref(db, `data/${y}/${m}/${w}/${type}`), {ven: "New Item", amt: "0.00", paid: false});
+    window.del = (y, m, w, type, id) => { if(confirm("Delete this item?")) remove(ref(db, `data/${y}/${m}/${w}/${type}/${id}`)); };
+
+    document.getElementById('yearSelect').onchange = renderUI;
+    document.getElementById('monthSelect').onchange = renderUI;
+
+    window.onload = initApp;
+</script>
+</body>
+</html>
