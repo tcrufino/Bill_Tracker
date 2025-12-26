@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Bill Tracker (Secure) - Index v3 Final</title>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <style>
+        :root { --primary: #2c3e50; --header-blue: #3498db; --success: #27ae60; --danger: #e74c3c; --paid-bg: #e8f5e9; --dark-navy: #34495e; }
+        body { font-family: -apple-system, sans-serif; background: #eef2f5; margin: 0; padding: 8px; padding-bottom: 110px; }
+        .top-nav { background: var(--primary); padding: 10px; border-radius: 10px; display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
+        .btn-db-top { background: #f39c12; color: white; text-decoration: none; padding: 0 8px; border-radius: 6px; font-weight: 800; font-size: 10px; height: 38px; display: flex; align-items: center; text-align: center; flex: 0 0 80px; text-transform: uppercase; }
+        .top-nav select { flex: 1; padding: 8px; border-radius: 6px; border: none; font-size: 14px; font-weight: bold; height: 38px; }
+        .summary-container { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+        .s-card { background: white; padding: 10px; border-radius: 12px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-left: 4px solid #3498db; min-height: 50px; }
+        .s-label { font-size: 9px; text-transform: uppercase; color: #7f8c8d; font-weight: 800; }
+        .s-val { font-size: 18px; font-weight: 800; }
+        .week-box { background: white; border-radius: 12px; margin-bottom: 12px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .week-header { background: var(--header-blue); color: white; padding: 8px 12px; font-weight: 800; font-size: 12px; display: flex; justify-content: space-between; }
+        .week-content { padding: 10px; }
+        .row { display: flex; gap: 4px; margin-bottom: 6px; align-items: center; width: 100%; box-sizing: border-box; }
+        .row.paid-highlight { background-color: var(--paid-bg); border-radius: 8px; }
+        .day-sel { width: 62px !important; flex-shrink: 0; font-size: 11px !important; height: 38px; border: 1px solid #ddd; border-radius: 6px; }
+        .ven-in { flex: 1; min-width: 50px; font-size: 13px !important; padding: 6px 4px !important; height: 38px; border: 1px solid #ddd; border-radius: 6px; }
+        .amt-wrapper { position: relative; width: 80px; flex-shrink: 0; }
+        .amt-wrapper::before { content: '$'; position: absolute; left: 4px; top: 50%; transform: translateY(-50%); font-size: 11px; color: #7f8c8d; }
+        .amt-in { width: 100% !important; font-size: 13px !important; text-align: right; height: 38px; padding-right: 4px !important; padding-left: 12px !important; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+        .btn-pay { background: var(--dark-navy); color: white; border: none; border-radius: 6px; font-weight: 800; font-size: 10px; width: 42px; height: 38px; flex-shrink: 0; cursor: pointer; }
+        .btn-pay.paid { background: var(--success); }
+        
+        /* Menu ⋮ Design */
+        .menu-container { position: relative; width: 20px; display: flex; justify-content: center; }
+        .btn-menu { background: none; border: none; color: #ccc; font-size: 20px; cursor: pointer; padding: 0 5px; line-height: 1; }
+        .dropdown-content { 
+            display: none; position: absolute; right: 25px; top: 0; background-color: white; 
+            min-width: 140px; box-shadow: 0px 4px 12px rgba(0,0,0,0.15); 
+            z-index: 1000; border-radius: 8px; overflow: hidden; border: 1px solid #eee;
+        }
+        .dropdown-content button { 
+            color: #2c3e50; padding: 12px; text-decoration: none; 
+            display: block; width: 100%; border: none; background: none; 
+            text-align: left; font-size: 11px; font-weight: 700; cursor: pointer;
+        }
+        .dropdown-content button:hover { background-color: #f8f9fa; }
+        .dropdown-content .btn-del-opt { color: var(--danger); border-top: 1px solid #eee; }
+        .show { display: block; }
+
+        .btn-add { background: var(--header-blue); color: white; border: none; padding: 12px; border-radius: 8px; font-weight: 800; width: 100%; margin-top: 5px; font-size: 11px; text-transform: uppercase; }
+        .btn-add-inc { background: var(--success); margin-top: 15px; }
+        .footer-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--primary); padding: 12px; text-align: center; z-index: 100; }
+        .foot-info span { font-size: 22px; font-weight: 800; color: white; }
+        .neg-amt { color: #e74c3c !important; }
+        #auth-status { font-size: 10px; color: #2ecc71; text-align: center; margin-bottom: 5px; display: none; }
+        
+        .weekly-summary-line { display: flex; justify-content: space-between; font-size: 10px; font-weight: 800; padding: 4px 0; border-top: 1px dashed #eee; margin-top: 4px; color: #7f8c8d; text-transform: uppercase; }
+        .weekly-balance { text-align: right; font-weight: 800; border-top: 2px solid #eee; padding-top: 8px; margin-top: 10px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div id="auth-status">🔒 SECURE CONNECTION ACTIVE</div>
+    <div class="top-nav">
+        <a href="database.html" class="btn-db-top">⚙️ MASTER DATABASE</a>
+        <select id="yearSelect" onchange="updateViewAndSave()">
+            <option value="2025">2025</option><option value="2026">2026</option><option value="2027">2027</option>
+            <option value="2028">2028</option><option value="2029">2029</option><option value="2030">2030</option>
+        </select>
+        <select id="monthSelect" onchange="updateViewAndSave()">
+            <option value="0">Jan</option><option value="1">Feb</option><option value="2">Mar</option>
+            <option value="3">Apr</option><option value="4">May</option><option value="5">Jun</option>
+            <option value="6">Jul</option><option value="7">Aug</option><option value="8">Sep</option>
+            <option value="9">Oct</option><option value="10">Nov</option><option value="11">Dec</option>
+        </select>
+    </div>
+    <div class="summary-container">
+        <div class="s-card"><div class="s-label">Monthly Bills</div><div class="s-val" id="totalBills" style="color: var(--danger);">$0.00</div></div>
+        <div class="s-card"><div class="s-label">Monthly Income</div><div class="s-val" id="totalIncome" style="color: var(--success);">$0.00</div></div>
+    </div>
+    <div id="weeksContainer"></div>
+    <div class="footer-bar"><div class="foot-info"><label style="color:#bdc3c7; font-size:9px; display:block;">MONTHLY REMAINING</label><span id="monthlyRemaining">$0.00</span></div></div>
+
+<script>
+    const firebaseConfig = { 
+        apiKey: "AIzaSyBsnuuEo8KSHb7taPQMpEJw8XkQVv3qW6k", 
+        authDomain: "billtrackersync-88b7a.firebaseapp.com", 
+        databaseURL: "https://billtrackersync-88b7a-default-rtdb.firebaseio.com", 
+        projectId: "billtrackersync-88b7a", 
+        storageBucket: "billtrackersync-88b7a.firebasestorage.app", 
+        messagingSenderId: "93682434120", 
+        appId: "1:93682434120:web:c3f3c3b968f975fd37d87d" 
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const auth = firebase.auth();
+
+    const monthShort = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const incomeOptions = ["Delivery", "Other", "R-Salary", "T-Salary"];
+
+    function performLogin() {
+        auth.signInWithEmailAndPassword("Thiagocouto.rufino@gmail.com", "@120795Thi")
+            .then(() => {
+                document.getElementById('auth-status').style.display = 'block';
+                loadData();
+            })
+            .catch(err => alert("Login Error: " + err.message));
+    }
+
+    // Toggle Menu ⋮
+    function toggleMenu(id) {
+        const menu = document.getElementById('menu-' + id);
+        const isVisible = menu.classList.contains('show');
+        document.querySelectorAll('.dropdown-content').forEach(el => el.classList.remove('show'));
+        if(!isVisible) menu.classList.add('show');
+    }
+
+    // New Intelligent Payment & App Redirect Logic
+    async function makePayment(vendorName) {
+        if (!vendorName || vendorName.trim() === "") {
+            alert("Please enter a vendor name.");
+            return;
+        }
+        
+        // Clean fractions like "Verizon 1/2"
+        let cleanName = vendorName.split(/\s?\d+\/\d+/)[0].trim();
+
+        try {
+            // Check Master Database for direct link
+            const masterSnap = await db.ref(`master_vendors`).once('value');
+            const masterData = masterSnap.val();
+            let targetUrl = null;
+
+            if (masterData) {
+                const foundKey = Object.keys(masterData).find(key => 
+                    key.toLowerCase() === cleanName.toLowerCase()
+                );
+                if (foundKey && masterData[foundKey].paymentUrl) {
+                    targetUrl = masterData[foundKey].paymentUrl;
+                }
+            }
+
+            if (targetUrl) {
+                // Use location.href to trigger App Opening (Universal Links)
+                window.location.href = targetUrl;
+            } else {
+                // Google Search Fallback
+                const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(cleanName + " official website login")}`;
+                window.open(searchUrl, '_blank');
+            }
+        } catch (error) {
+            window.open(`https://www.google.com/search?q=${encodeURIComponent(cleanName + " login")}`, '_blank');
+        }
+    }
+
+    async function confirmDel(y, m, type, id) {
+        if(confirm("Are you sure you want to delete this line?")) {
+            await deleteItem(y, m, type, id);
+        }
+    }
+
+    window.onclick = function(event) {
+        if (!event.target.matches('.btn-menu')) {
+            document.querySelectorAll('.dropdown-content').forEach(el => el.classList.remove('show'));
+        }
+    }
+
+    function formatAccounting(num) {
+        const val = parseFloat(num) || 0;
+        const formatted = Math.abs(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return val < 0 ? `<span class="neg-amt">($${formatted})</span>` : `$${formatted}`;
+    }
+
+    function getWeeksInMonth(year, month) {
+        const weeks = [];
+        let firstDay = new Date(year, month, 1);
+        let lastDay = new Date(year, month + 1, 0);
+        let current = new Date(firstDay);
+        current.setDate(firstDay.getDate() - firstDay.getDay());
+        while (current <= lastDay) {
+            let weekStart = new Date(current);
+            let weekEnd = new Date(current);
+            weekEnd.setDate(current.getDate() + 6);
+            let daysInMonth = 0;
+            for(let i=0; i<7; i++){
+                let d = new Date(weekStart); d.setDate(d.getDate()+i);
+                if(d.getMonth() === month) daysInMonth++;
+            }
+            if(daysInMonth >= 4) weeks.push({ start: weekStart, end: weekEnd });
+            current.setDate(current.getDate() + 7);
+        }
+        return weeks;
+    }
+
+    async function loadData() {
+        if (!auth.currentUser) return;
+        const year = document.getElementById('yearSelect').value;
+        const month = parseInt(document.getElementById('monthSelect').value);
+        const weeks = getWeeksInMonth(parseInt(year), month);
+        
+        const snap = await db.ref(`data/${year}/${month}`).once('value');
+        const rawData = snap.val() || {};
+        
+        let allBills = [], allIncome = [];
+        Object.values(rawData).forEach(w => {
+            if(w && w.bills) Object.entries(w.bills).forEach(([id, b]) => { if(b && b.date) allBills.push({...b, id}); });
+            if(w && w.income) Object.entries(w.income).forEach(([id, i]) => { if(i && i.date) allIncome.push({...i, id}); });
+        });
+
+        const container = document.getElementById('weeksContainer');
+        container.innerHTML = '';
+        let mBills = 0, mIncome = 0;
+
+        weeks.forEach((week, i) => {
+            const wNum = i + 1;
+            const weekBills = allBills.filter(b => isDateInWeek(b.date, week));
+            const weekIncome = allIncome.filter(inc => isDateInWeek(inc.date, week));
+            let wBillSum = 0, wIncSum = 0;
+
+            let bHtml = weekBills.map(b => {
+                const amtVal = parseFloat(b.amt) || 0;
+                wBillSum += amtVal;
+                return `<div class="row ${b.paid ? 'paid-highlight' : ''}">
+                    <select class="day-sel" onchange="updateItem('${year}','${month}','bills','${b.id}','date',this.value)">${getDayOptions(week, b.date)}</select>
+                    <input class="ven-in" type="text" value="${b.ven || ''}" placeholder="Vendor" onchange="updateItem('${year}','${month}','bills','${b.id}','ven',this.value)">
+                    <div class="amt-wrapper"><input class="amt-in" type="text" value="${amtVal.toLocaleString('en-US',{minimumFractionDigits:2})}" onblur="updateItem('${year}','${month}','bills','${b.id}','amt',this.value)"></div>
+                    <button class="btn-pay ${b.paid ? 'paid' : ''}" onclick="togglePaid('${year}','${month}','${b.id}',${b.paid})">${b.paid?'PAID':'PAY'}</button>
+                    <div class="menu-container">
+                        <button class="btn-menu" onclick="toggleMenu('${b.id}')">⋮</button>
+                        <div id="menu-${b.id}" class="dropdown-content">
+                            <button onclick="makePayment('${b.ven}')">🌐 Make Payment</button>
+                            <button class="btn-del-opt" onclick="confirmDel('${year}','${month}','bills','${b.id}')">❌ Delete Row</button>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+
+            let iHtml = weekIncome.map(inc => {
+                const incVal = parseFloat(inc.amt) || 0;
+                wIncSum += incVal;
+                return `<div class="row">
+                    <select class="day-sel" onchange="updateItem('${year}','${month}','income','${inc.id}','date',this.value)">${getDayOptions(week, inc.date)}</select>
+                    <select class="ven-in" onchange="updateItem('${year}','${month}','income','${inc.id}','ven',this.value)">
+                        <option value="" disabled ${!inc.ven ? 'selected' : ''}>Income Source</option>
+                        ${incomeOptions.map(opt => `<option value="${opt}" ${inc.ven===opt?'selected':''}>${opt}</option>`).join('')}
+                    </select>
+                    <div class="amt-wrapper"><input class="amt-in" type="text" value="${incVal.toLocaleString('en-US',{minimumFractionDigits:2})}" onblur="updateItem('${year}','${month}','income','${inc.id}','amt',this.value)"></div>
+                    <div class="menu-container">
+                        <button class="btn-menu" onclick="toggleMenu('${inc.id}')">⋮</button>
+                        <div id="menu-${inc.id}" class="dropdown-content">
+                            <button class="btn-del-opt" onclick="confirmDel('${year}','${month}','income','${inc.id}')">❌ Delete Row</button>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+
+            mBills += wBillSum; mIncome += wIncSum;
+            
+            container.innerHTML += `
+            <div class="week-box">
+                <div class="week-header"><span>WEEK ${wNum}</span><span>${week.start.getDate()} ${monthShort[week.start.getMonth()]} - ${week.end.getDate()} ${monthShort[week.end.getMonth()]}</span></div>
+                <div class="week-content">
+                    <div style="font-size:9px; font-weight:800; color:#7f8c8d; margin-bottom:4px;">BILLS</div>
+                    ${bHtml}
+                    <div class="weekly-summary-line"><span>Total Bills:</span><span>$${wBillSum.toLocaleString('en-US',{minimumFractionDigits:2})}</span></div>
+                    <button class="btn-add" onclick="addItem('${year}','${month}','w${wNum}','bills')">+ Add Bill Row</button>
+                    <div style="font-size:9px; font-weight:800; color:#7f8c8d; margin:15px 0 4px 0;">INCOME</div>
+                    ${iHtml}
+                    <div class="weekly-summary-line"><span>Total Income:</span><span>$${wIncSum.toLocaleString('en-US',{minimumFractionDigits:2})}</span></div>
+                    <button class="btn-add btn-add-inc" onclick="addItem('${year}','${month}','w${wNum}','income')">+ Add Income Row</button>
+                    <div class="weekly-balance">Week Balance: ${formatAccounting(wIncSum - wBillSum)}</div>
+                </div>
+            </div>`;
+        });
+        document.getElementById('totalBills').innerHTML = formatAccounting(mBills);
+        document.getElementById('totalIncome').innerHTML = formatAccounting(mIncome);
+        document.getElementById('monthlyRemaining').innerHTML = formatAccounting(mIncome - mBills);
+    }
+
+    function isDateInWeek(dateStr, week) {
+        if(!dateStr) return false;
+        const day = parseInt(dateStr.split(' ')[0]);
+        const start = week.start.getDate(); const end = week.end.getDate();
+        if (start > end) return (day >= start || day <= end);
+        return (day >= start && day <= end);
+    }
+
+    function getDayOptions(week, current) {
+        let opt = ''; let d = new Date(week.start);
+        for(let i=0; i<7; i++) {
+            let val = `${d.getDate()} ${monthShort[d.getMonth()]}`;
+            opt += `<option value="${val}" ${val===current?'selected':''}>${val}</option>`;
+            d.setDate(d.getDate()+1);
+        }
+        return opt;
+    }
+
+    async function addItem(y, m, w, type) {
+        const weeks = getWeeksInMonth(parseInt(y), parseInt(m));
+        const week = weeks[parseInt(w.replace('w',''))-1];
+        await db.ref(`data/${y}/${m}/${w}/${type}`).push({ date: week.start.getDate() + " " + monthShort[m], ven: "", amt: 0, paid: false });
+        loadData();
+    }
+
+    async function updateItem(y, m, type, id, field, val) {
+        const cleanVal = field === 'amt' ? val.replace(/[^0-9.]/g, '') : val;
+        const snap = await db.ref(`data/${y}/${m}`).once('value');
+        const data = snap.val();
+        for(let w in data) { if(data[w][type] && data[w][type][id]) { await db.ref(`data/${y}/${m}/${w}/${type}/${id}`).update({ [field]: cleanVal }); break; } }
+        loadData();
+    }
+
+    async function togglePaid(y, m, id, curr) {
+        const snap = await db.ref(`data/${y}/${m}`).once('value');
+        const data = snap.val();
+        for(let w in data) { if(data[w].bills && data[w].bills[id]) { await db.ref(`data/${y}/${m}/${w}/bills/${id}`).update({ paid: !curr }); break; } }
+        loadData();
+    }
+
+    async function deleteItem(y, m, type, id) {
+        const snap = await db.ref(`data/${y}/${m}`).once('value');
+        const data = snap.val();
+        for(let w in data) { if(data[w][type] && data[w][type][id]) { await db.ref(`data/${y}/${m}/${w}/${type}/${id}`).remove(); break; } }
+        loadData();
+    }
+
+    function updateViewAndSave() {
+        localStorage.setItem('lastYear', document.getElementById('yearSelect').value);
+        localStorage.setItem('lastMonth', document.getElementById('monthSelect').value);
+        loadData();
+    }
+
+    window.onload = () => {
+        document.getElementById('yearSelect').value = localStorage.getItem('lastYear') || 2025;
+        document.getElementById('monthSelect').value = localStorage.getItem('lastMonth') || 0;
+        performLogin();
+    };
+</script>
+</body>
+</html>
