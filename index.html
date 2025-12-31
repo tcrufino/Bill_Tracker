@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Bill Tracker">
+    <meta name="mobile-web-app-capable" content="yes">
+
+    <title>Bill Tracker Master - v3 Final</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    
+    <style>
+        :root { --primary: #2c3e50; --header-blue: #3498db; --success: #27ae60; --danger: #e74c3c; --paid-bg: #e8f5e9; --dark-navy: #34495e; --surplus-teal: #16a085; }
+        body { font-family: -apple-system, sans-serif; background: #eef2f5; margin: 0; padding: 8px; padding-bottom: 120px; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
+        
+        #loading-screen { position:fixed; top:0; left:0; width:100%; height:100%; background:white; display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:10000; transition: opacity 0.5s; }
+        .loading-spinner { border: 4px solid #f3f3f3; border-top: 4px solid var(--header-blue); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .top-nav { background: var(--primary); padding: 12px 10px; border-radius: 10px; display: flex; gap: 6px; margin-bottom: 10px; align-items: center; position: sticky; top: 0; z-index: 1000; }
+        .btn-db-top { background: #f39c12; color: white; text-decoration: none; padding: 0 10px; border-radius: 6px; font-weight: 800; font-size: 10px; height: 38px; display: flex; align-items: center; text-align: center; flex: 0 0 85px; text-transform: uppercase; }
+        .top-nav select { flex: 1; padding: 8px; border-radius: 6px; border: none; font-size: 14px; font-weight: bold; height: 38px; background: white; -webkit-appearance: none; }
+
+        .summary-container { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+        .s-card { background: white; padding: 10px; border-radius: 12px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-left: 4px solid var(--header-blue); }
+        .s-label { font-size: 9px; text-transform: uppercase; color: #7f8c8d; font-weight: 800; margin-bottom: 4px; }
+        .s-val { font-size: 18px; font-weight: 800; }
+
+        .surplus-banner { background: var(--surplus-teal); color: white; padding: 12px; border-radius: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: bold; border: 1px solid rgba(255,255,255,0.3); }
+        .btn-carry { background: white; color: var(--surplus-teal); border: none; padding: 8px 14px; border-radius: 6px; font-size: 10px; font-weight: 800; cursor: pointer; text-transform: uppercase; }
+
+        .week-box { background: white; border-radius: 12px; margin-bottom: 15px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 1px solid #ddd; }
+        .week-header { background: var(--header-blue); color: white; padding: 12px; font-weight: 800; font-size: 12px; display: flex; justify-content: space-between; }
+        
+        .row { display: flex; gap: 4px; margin-bottom: 8px; align-items: center; padding: 4px; position: relative; border-radius: 8px; }
+        .row.paid-highlight { background-color: var(--paid-bg); }
+        
+        .day-sel { width: 75px; flex-shrink: 0; font-size: 11px; height: 38px; border: 1px solid #ddd; border-radius: 6px; background: #fafafa; }
+        .ven-in, .ven-sel { flex: 3; min-width: 100px; font-size: 11px; height: 38px; border: 1px solid #ddd; border-radius: 6px; padding: 0 8px; }
+        .amt-in { width: 95px; font-size: 13px; text-align: right; height: 36px; border: 1px solid #ddd; border-radius: 6px; padding-right: 6px; font-family: monospace; font-weight: bold; }
+        
+        .btn-pay { background: var(--dark-navy); color: white; border: none; border-radius: 6px; font-weight: 800; font-size: 10px; width: 45px; height: 38px; }
+        .btn-pay.paid { background: var(--success); }
+
+        .opt-btn { background: none; border: none; color: #bdc3c7; font-size: 22px; cursor: pointer; padding: 0 8px; }
+        .menu-drop { display: none; position: absolute; right: 35px; top: 0; background: white; border: 1px solid #ddd; border-radius: 8px; z-index: 2000; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .menu-drop button { display: block; width: 100%; padding: 12px 20px; border: none; background: none; color: var(--danger); font-size: 12px; font-weight: bold; text-align: left; }
+
+        .weekly-summary-line { background: #f8f9fa; display: flex; justify-content: space-between; font-size: 12px; padding: 12px; border-radius: 8px; margin-top: 10px; font-weight: 900; border: 1px solid #eee; }
+
+        .btn-add { background: var(--header-blue); color: white; border: none; padding: 14px; border-radius: 8px; font-weight: 800; width: 100%; cursor: pointer; margin-top: 8px; font-size: 11px; }
+        
+        .footer-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--primary); padding: 15px; text-align: center; z-index: 1500; box-shadow: 0 -2px 15px rgba(0,0,0,0.3); padding-bottom: calc(15px + env(safe-area-inset-bottom)); }
+        .foot-info span { font-size: 26px; font-weight: 800; color: white; }
+    </style>
+</head>
+<body>
+
+<div id="loading-screen">
+    <div class="loading-spinner"></div>
+    <b id="loader-msg">SYNCING DATABASE...</b>
+</div>
+
+<div class="top-nav">
+    <a href="database.html" class="btn-db-top">MASTER DATABASE</a>
+    <select id="yearSelect" onchange="saveState(); loadData()"></select>
+    <select id="monthSelect" onchange="saveState(); loadData()"></select>
+</div>
+
+<div class="summary-container">
+    <div class="s-card"><div class="s-label">Total Bills</div><div id="totalBills" class="s-val" style="color:var(--danger)">$0.00</div></div>
+    <div class="s-card"><div class="s-label">Total Income</div><div id="totalIncome" class="s-val" style="color:var(--success)">$0.00</div></div>
+</div>
+
+<div id="weeksContainer"></div>
+
+<div class="footer-bar">
+    <div class="foot-info">
+        <label style="color:#bdc3c7;font-size:10px;display:block;margin-bottom:2px;font-weight:700;">MONTHLY REMAINING</label>
+        <span id="monthlyRemaining">$0.00</span>
+    </div>
+</div>
+
+<script>
+    const firebaseConfig = { 
+        apiKey: "AIzaSyBsnuuEo8KSHb7taPQMpEJw8XkQVv3qW6k", 
+        authDomain: "billtrackersync-88b7a.firebaseapp.com", 
+        databaseURL: "https://billtrackersync-88b7a-default-rtdb.firebaseio.com", 
+        projectId: "billtrackersync-88b7a", 
+        storageBucket: "billtrackersync-88b7a.firebasestorage.app", 
+        messagingSenderId: "93682434120", 
+        appId: "1:93682434120:web:c3f3c3b968f975fd37d87d" 
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const auth = firebase.auth();
+
+    // Persistência Decisiva para Web App
+    auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const accFormatter = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    
+    function toAcc(val) { return accFormatter.format(parseFloat(val) || 0); }
+
+    function saveState() {
+        localStorage.setItem('savedYear', document.getElementById('yearSelect').value);
+        localStorage.setItem('savedMonth', document.getElementById('monthSelect').value);
+    }
+
+    const yearSelect = document.getElementById('yearSelect');
+    for(let y=2024; y<=2030; y++) { yearSelect.innerHTML += `<option value="${y}">${y}</option>`; }
+    const mSelect = document.getElementById('monthSelect');
+    monthNames.forEach((m, i) => mSelect.innerHTML += `<option value="${i}">${m}</option>`);
+
+    yearSelect.value = localStorage.getItem('savedYear') || new Date().getFullYear();
+    mSelect.value = localStorage.getItem('savedMonth') || new Date().getMonth();
+
+    function getWeeks(year, month) {
+        const weeks = [];
+        let firstDay = new Date(year, month, 1);
+        let current = (year == 2026 && month == 0) ? new Date(2026, 0, 4) : new Date(firstDay);
+        if(!(year == 2026 && month == 0)) current.setDate(firstDay.getDate() - firstDay.getDay());
+        
+        for (let i = 0; i < 6; i++) {
+            let weekStart = new Date(current);
+            let daysInMonth = 0;
+            for(let d=0; d<7; d++) {
+                let check = new Date(weekStart); check.setDate(check.getDate() + d);
+                if(check.getMonth() === month) daysInMonth++;
+            }
+            if(daysInMonth >= 1) {
+                let weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
+                weeks.push({ start: weekStart, end: weekEnd, key: 'w'+(i+1) });
+            }
+            current.setDate(current.getDate() + 7);
+            if(current.getMonth() > month && year == current.getFullYear()) break;
+        }
+        return weeks;
+    }
+
+    async function loadData() {
+        document.getElementById('loading-screen').style.opacity = '1';
+        document.getElementById('loading-screen').style.display = 'flex';
+        
+        const y = yearSelect.value, m = mSelect.value;
+        const weeks = getWeeks(parseInt(y), parseInt(m));
+        
+        try {
+            const snap = await db.ref(`data/${y}/${m}`).once('value');
+            const data = snap.val() || {};
+            
+            // --- CÁLCULO DE SURPLUS INFINITO (Mês/Ano Anterior) ---
+            let runningSurplus = 0;
+            let pM = parseInt(m) - 1, pY = parseInt(y);
+            if(pM < 0) { pM = 11; pY--; }
+            
+            const pSnap = await db.ref(`data/${pY}/${pM}`).once('value');
+            const pData = pSnap.val() || {};
+            const pWeeks = Object.keys(pData).sort();
+            const lastWKKey = pWeeks.pop();
+            
+            if(lastWKKey) {
+                let pb = 0, pi = 0;
+                Object.values(pData[lastWKKey].bills || {}).forEach(x => pb += (parseFloat(x.amt)||0));
+                Object.values(pData[lastWKKey].income || {}).forEach(x => pi += (parseFloat(x.amt)||0));
+                if(pi - pb > 0) runningSurplus = pi - pb;
+            }
+
+            const container = document.getElementById('weeksContainer');
+            container.innerHTML = '';
+
+            weeks.forEach((w) => {
+                const wData = data[w.key] || {};
+                let wBills = 0, wIncome = 0;
+                Object.values(wData.bills || {}).forEach(x => wBills += (parseFloat(x.amt)||0));
+                Object.values(wData.income || {}).forEach(x => wIncome += (parseFloat(x.amt)||0));
+
+                container.innerHTML += `
+                    <div class="week-box" id="wb-${w.key}">
+                        <div class="week-header"><span>WEEK ${w.key.toUpperCase()}</span><span>${w.start.getDate()} ${monthNames[w.start.getMonth()]} - ${w.end.getDate()} ${monthNames[w.end.getMonth()]}</span></div>
+                        <div style="padding:10px">
+                            ${(runningSurplus > 0) ? `
+                            <div class="surplus-banner" id="banner-${w.key}">
+                                <span>✨ Surplus Found: $${toAcc(runningSurplus)}</span>
+                                <button class="btn-carry" onclick="carryOverSilent('${y}','${m}','${w.key}',${runningSurplus})">Injetar</button>
+                            </div>` : ''}
+                            
+                            <div style="font-size:10px; font-weight:800; color:#7f8c8d; margin-bottom:5px;">BILLS</div>
+                            <div id="list-bills-${w.key}">${renderRows(y, m, w, wData, 'bills')}</div>
+                            <button class="btn-add" onclick="addItemSilent('${y}','${m}','${w.key}','bills')">+ ADD BILL</button>
+
+                            <div style="font-size:10px; font-weight:800; color:#7f8c8d; margin:15px 0 5px 0;">INCOME</div>
+                            <div id="list-income-${w.key}">${renderRows(y, m, w, wData, 'income')}</div>
+                            <button class="btn-add" style="background:var(--success)" onclick="addItemSilent('${y}','${m}','${w.key}','income')">+ ADD INCOME</button>
+                            
+                            <div class="weekly-summary-line"><span>Week Balance:</span><span class="week-bal-display">$${toAcc(wIncome - wBills)}</span></div>
+                        </div>
+                    </div>`;
+                
+                runningSurplus = (wIncome - wBills > 0) ? (wIncome - wBills) : 0;
+            });
+
+            updateGlobalTotals();
+            document.getElementById('loading-screen').style.display = 'none';
+        } catch (e) {
+            document.getElementById('loader-msg').innerHTML = "RETRYING CONNECTION...";
+            setTimeout(loadData, 2000);
+        }
+    }
+
+    function renderRows(y, m, w, wData, type) {
+        const items = Object.entries(wData[type] || {});
+        items.sort((a, b) => parseInt(a[1].date) - parseInt(b[1].date));
+        return items.map(([id, item]) => createRowHTML(y, m, w.key, type, id, item, w)).join('');
+    }
+
+    function createRowHTML(y, m, wKey, type, id, item, weekObj) {
+        const val = parseFloat(item.amt) || 0;
+        return `
+        <div class="row ${item.paid?'paid-highlight':''}" id="row-${id}">
+            <select class="day-sel" onchange="silentSave('${y}','${m}','${wKey}','${type}','${id}','date',this.value)">${getDayOpts(weekObj, item.date)}</select>
+            ${type === 'income' ? 
+                `<select class="ven-sel" onchange="silentSave('${y}','${m}','${wKey}','${type}','${id}','ven',this.value)">
+                    <option value="T-Salary" ${item.ven==='T-Salary'?'selected':''}>T-Salary</option>
+                    <option value="R-Salary" ${item.ven==='R-Salary'?'selected':''}>R-Salary</option>
+                    <option value="Delivery" ${item.ven==='Delivery'?'selected':''}>Delivery</option>
+                    <option value="Other" ${item.ven==='Other'?'selected':''}>Other</option>
+                </select>` :
+                `<input class="ven-in" type="text" value="${item.ven||''}" placeholder="Description" onchange="silentSave('${y}','${m}','${wKey}','${type}','${id}','ven',this.value)">`
+            }
+            <input class="amt-in" type="text" value="${val !== 0 ? toAcc(val) : ''}" placeholder="0.00" 
+                   inputmode="decimal" onfocus="this.value = this.value.replace(/,/g, '')"
+                   onblur="silentAmountSave('${y}','${m}','${wKey}','${type}','${id}',this)">
+            ${type==='bills' ? `<button class="btn-pay ${item.paid?'paid':''}" id="paybtn-${id}" onclick="togglePaidSilent('${y}','${m}','${wKey}','${id}',${item.paid})">${item.paid?'PAID':'PAY'}</button>` : ''}
+            <button class="opt-btn" onclick="toggleMenu('${id}')">⋮</button>
+            <div id="menu-${id}" class="menu-drop"><button onclick="deleteRowSilent('${y}','${m}','${wKey}','${type}','${id}')">Delete</button></div>
+        </div>`;
+    }
+
+    async function addItemSilent(y, m, w, type) {
+        const wk = getWeeks(parseInt(y), parseInt(m)).find(x => x.key === w);
+        const dateStr = wk.start.getDate() + " " + monthNames[wk.start.getMonth()];
+        const newItem = { date: dateStr, ven: '', amt: 0, paid: false };
+        const newRef = await db.ref(`data/${y}/${m}/${w}/${type}`).push(newItem);
+        
+        const container = document.getElementById(`list-${type}-${w}`);
+        const div = document.createElement('div');
+        div.innerHTML = createRowHTML(y, m, w, type, newRef.key, newItem, wk);
+        container.appendChild(div.firstElementChild);
+        updateGlobalTotals();
+    }
+
+    async function silentSave(y, m, w, type, id, field, val) {
+        await db.ref(`data/${y}/${m}/${w}/${type}/${id}`).update({ [field]: val });
+        updateGlobalTotals();
+    }
+
+    async function silentAmountSave(y, m, w, type, id, el) {
+        let clean = el.value.replace(/[^0-9.]/g, '');
+        el.value = (parseFloat(clean) > 0) ? toAcc(clean) : "";
+        await db.ref(`data/${y}/${m}/${w}/${type}/${id}`).update({ amt: clean || 0 });
+        updateGlobalTotals();
+    }
+
+    async function togglePaidSilent(y, m, w, id, curr) {
+        const next = !curr;
+        await db.ref(`data/${y}/${m}/${w}/bills/${id}`).update({ paid: next });
+        const row = document.getElementById(`row-${id}`);
+        const btn = document.getElementById(`paybtn-${id}`);
+        row.classList.toggle('paid-highlight', next);
+        btn.classList.toggle('paid', next);
+        btn.innerText = next ? 'PAID' : 'PAY';
+        btn.setAttribute('onclick', `togglePaidSilent('${y}','${m}','${w}','${id}',${next})`);
+        updateGlobalTotals();
+    }
+
+    async function deleteRowSilent(y, m, w, type, id) {
+        if(confirm("Confirm?")) {
+            await db.ref(`data/${y}/${m}/${w}/${type}/${id}`).remove();
+            document.getElementById(`row-${id}`).remove();
+            updateGlobalTotals();
+        }
+    }
+
+    async function carryOverSilent(y, m, w, val) {
+        const newItem = { date: new Date().getDate() + " " + monthNames[m], ven: 'Surplus Carry Over', amt: val };
+        await db.ref(`data/${y}/${m}/${w}/income`).push(newItem);
+        loadData(); 
+    }
+
+    function updateGlobalTotals() {
+        let mB = 0, mI = 0;
+        document.querySelectorAll('.week-box').forEach(wb => {
+            let wB = 0, wI = 0;
+            wb.querySelectorAll('.row').forEach(row => {
+                const val = parseFloat(row.querySelector('.amt-in').value.replace(/,/g, '')) || 0;
+                if(row.querySelector('.btn-pay')) wB += val; else wI += val;
+            });
+            wb.querySelector('.week-bal-display').innerText = '$' + toAcc(wI - wB);
+            mB += wB; mI += wI;
+        });
+        document.getElementById('totalBills').innerText = '$' + toAcc(mB);
+        document.getElementById('totalIncome').innerText = '$' + toAcc(mI);
+        const rem = mI - mB;
+        document.getElementById('monthlyRemaining').innerText = (rem < 0 ? '-$' : '$') + toAcc(Math.abs(rem));
+    }
+
+    function toggleMenu(id) {
+        const m = document.getElementById('menu-'+id);
+        const isOpen = m.style.display === 'block';
+        document.querySelectorAll('.menu-drop').forEach(d => d.style.display = 'none');
+        m.style.display = isOpen ? 'none' : 'block';
+    }
+
+    function getDayOpts(week, current) {
+        let opts = ''; let d = new Date(week.start);
+        for(let i=0; i<7; i++) {
+            let v = `${d.getDate()} ${monthNames[d.getMonth()]}`;
+            opts += `<option value="${v}" ${v===current?'selected':''}>${v}</option>`;
+            d.setDate(d.getDate()+1);
+        }
+        return opts;
+    }
+
+    auth.onAuthStateChanged((user) => {
+        if (user) {
+            loadData();
+        } else {
+            document.getElementById('loader-msg').innerText = "SECURING SESSION...";
+            auth.signInAnonymously().catch(() => {
+                document.getElementById('loader-msg').innerHTML = "CONNECTION FAILED. <br> <button onclick='location.reload()'>RETRY NOW</button>";
+            });
+        }
+    });
+
+    document.addEventListener('click', (e) => { if(!e.target.classList.contains('opt-btn')) document.querySelectorAll('.menu-drop').forEach(d => d.style.display = 'none'); });
+</script>
+</body>
+</html>
