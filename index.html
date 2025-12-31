@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Bill Tracker - Index v3 Auto-Sync</title>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <style>
+        :root { --primary: #2c3e50; --header-blue: #3498db; --success: #27ae60; --danger: #e74c3c; --paid-bg: #e8f5e9; --dark-navy: #34495e; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, sans-serif; background: #eef2f5; margin: 0; padding: 6px; padding-bottom: 120px; overflow-x: hidden; width: 100vw; }
+        
+        /* Nav e Headers */
+        .top-nav { background: var(--primary); padding: 8px; border-radius: 10px; display: flex; gap: 5px; margin-bottom: 10px; align-items: center; }
+        .btn-db-top { background: #f39c12; color: white; text-decoration: none; padding: 0 8px; border-radius: 6px; font-weight: 800; font-size: 10px; height: 38px; display: flex; align-items: center; text-transform: uppercase; }
+        .top-nav select { flex: 1; height: 38px; border-radius: 6px; border: none; font-weight: bold; font-size: 14px; background: white; }
+
+        .summary-container { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+        .s-card { background: white; padding: 10px 2px; border-radius: 12px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-bottom: 3px solid var(--header-blue); }
+        .s-label { font-size: 8px; text-transform: uppercase; color: #95a5a6; font-weight: 800; margin-bottom: 2px; }
+        .s-val { font-size: 18px; font-weight: 900; }
+
+        /* Carrying Over Banner */
+        .surplus-banner { background: var(--success); color: white; padding: 10px; border-radius: 8px; margin: 5px; display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: bold; }
+        .btn-carry { background: white; color: var(--success); border: none; padding: 5px 10px; border-radius: 4px; font-size: 10px; font-weight: 900; }
+
+        .week-box { background: white; border-radius: 12px; margin-bottom: 15px; overflow: hidden; border: 1px solid #ddd; }
+        .week-header { background: var(--header-blue); color: white; padding: 10px; font-weight: 800; font-size: 11px; display: flex; justify-content: space-between; }
+        
+        .section-title { font-size: 9px; font-weight: 900; color: #7f8c8d; margin: 10px 8px 5px; text-transform: uppercase; }
+
+        /* Inputs Ajustados para a largura do iPhone */
+        .row { display: flex; gap: 3px; margin-bottom: 5px; align-items: center; padding: 0 5px; width: 100%; position: relative; }
+        .row.paid-highlight { background-color: var(--paid-bg); border-radius: 6px; }
+        
+        .day-sel { width: 22%; font-size: 11px; height: 36px; border: 1px solid #eee; border-radius: 6px; background: #fff; }
+        .ven-in { width: 38%; font-size: 12px; height: 36px; border: 1px solid #eee; border-radius: 6px; padding: 0 5px; }
+        .amt-in { width: 22%; font-size: 13px; text-align: right; height: 36px; border: 1px solid #eee; border-radius: 6px; font-weight: bold; }
+        
+        .btn-pay { width: 12%; background: var(--dark-navy); color: white; border: none; border-radius: 6px; font-weight: 800; font-size: 9px; height: 36px; }
+        .btn-pay.paid { background: var(--success); }
+        .btn-del-x { width: 6%; border: none; background: none; color: #ccc; font-size: 18px; padding: 0; }
+
+        .session-total { background: #f9f9f9; display: flex; justify-content: space-between; font-size: 10px; padding: 8px; border-radius: 6px; margin: 4px 8px; font-weight: 800; color: #555; }
+        .btn-add { background: var(--header-blue); color: white; border: none; padding: 12px; border-radius: 10px; font-weight: 800; width: calc(100% - 16px); margin: 5px 8px 10px; font-size: 10px; }
+
+        .footer-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--primary); padding: 15px; text-align: center; z-index: 5000; padding-bottom: calc(15px + env(safe-area-inset-bottom)); }
+        .footer-bar span { font-size: 26px; font-weight: 900; color: white; }
+        
+        #loading-screen { position:fixed; top:0; left:0; width:100%; height:100%; background:white; display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:9999; }
+    </style>
+</head>
+<body>
+    <div id="loading-screen">
+        <div style="border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;"></div>
+        <b style="margin-top:15px; font-size:12px; color:#333;">SYNCING DATA...</b>
+    </div>
+
+    <div class="top-nav">
+        <a href="database.html" class="btn-db-top">DATABASE</a>
+        <select id="yearSelect" onchange="initLoad()"></select>
+        <select id="monthSelect" onchange="initLoad()"></select>
+    </div>
+
+    <div class="summary-container">
+        <div class="s-card"><div class="s-label">Total Bills</div><div id="totalBills" class="s-val" style="color:var(--danger)">$0.00</div></div>
+        <div class="s-card"><div class="s-label">Total Income</div><div id="totalIncome" class="s-val" style="color:var(--success)">$0.00</div></div>
+    </div>
+
+    <div id="weeksContainer"></div>
+
+    <div class="footer-bar">
+        <label style="color:#bdc3c7;font-size:9px;display:block;text-transform:uppercase;margin-bottom:4px;">Monthly Remaining</label>
+        <span id="monthlyRemaining">$0.00</span>
+    </div>
+
+<script>
+    const firebaseConfig = { 
+        apiKey: "AIzaSyBsnuuEo8KSHb7taPQMpEJw8XkQVv3qW6k", 
+        authDomain: "billtrackersync-88b7a.firebaseapp.com", 
+        databaseURL: "https://billtrackersync-88b7a-default-rtdb.firebaseio.com", 
+        projectId: "billtrackersync-88b7a" 
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const money = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const yS = document.getElementById('yearSelect');
+    const mS = document.getElementById('monthSelect');
+
+    for(let y=2019; y<=2067; y++) { yS.innerHTML += `<option value="${y}">${y}</option>`; }
+    monthNames.forEach((m, i) => mS.innerHTML += `<option value="${i}">${m}</option>`);
+
+    // RESGATE DO LOCAL STORAGE
+    yS.value = localStorage.getItem('lastYear') || new Date().getFullYear();
+    mS.value = localStorage.getItem('lastMonth') || new Date().getMonth();
+
+    function initLoad() {
+        localStorage.setItem('lastYear', yS.value);
+        localStorage.setItem('lastMonth', mS.value);
+        document.getElementById('loading-screen').style.display = 'flex';
+        
+        const path = `data/${yS.value}/${mS.value}`;
+        db.ref(path).on('value', snap => {
+            renderAll(snap.val() || {});
+            document.getElementById('loading-screen').style.display = 'none';
+        }, err => {
+            alert("Connection error. Check 5G/Wi-Fi.");
+            document.getElementById('loading-screen').innerHTML = "<b>CONNECTION FAILED. REFRESH PAGE.</b>";
+        });
+    }
+
+    function getWeeks(y, m) {
+        const weeks = [];
+        let first = new Date(y, m, 1);
+        let curr = new Date(first);
+        curr.setDate(first.getDate() - first.getDay());
+        for (let i = 0; i < 6; i++) {
+            let start = new Date(curr);
+            let end = new Date(curr); end.setDate(start.getDate() + 6);
+            if (start.getMonth() == m || end.getMonth() == m) {
+                weeks.push({ start, end, key: 'w' + (i+1) });
+            }
+            curr.setDate(curr.getDate() + 7);
+        }
+        return weeks;
+    }
+
+    function renderAll(data) {
+        const container = document.getElementById('weeksContainer');
+        container.innerHTML = '';
+        const weeks = getWeeks(parseInt(yS.value), parseInt(mS.value));
+        let mBills = 0, mInc = 0, prevSurplus = 0;
+
+        weeks.forEach(w => {
+            const wData = data[w.key] || {};
+            let wB = 0, wI = 0;
+
+            const buildRows = (type) => {
+                // AUTO-SORT restaurado
+                const items = Object.entries(wData[type] || {}).sort((a,b) => {
+                    return (parseInt(a[1].date) || 0) - (parseInt(b[1].date) || 0);
+                });
+
+                return items.map(([id, item]) => {
+                    const val = parseFloat(item.amt) || 0;
+                    if(type==='bills') { wB += val; mBills += val; } else { wI += val; mInc += val; }
+                    return `
+                    <div class="row ${item.paid?'paid-highlight':''}">
+                        <select class="day-sel" onchange="upd('${w.key}','${type}','${id}','date',this.value)">${getDayOpts(w, item.date)}</select>
+                        <input class="ven-in" type="text" value="${item.ven||''}" placeholder="..." onchange="upd('${w.key}','${type}','${id}','ven',this.value)">
+                        <input class="amt-in" type="number" step="0.01" value="${item.amt||0}" onblur="upd('${w.key}','${type}','${id}','amt',this.value)">
+                        ${type==='bills' ? `<button class="btn-pay ${item.paid?'paid':''}" onclick="pay('${w.key}','${id}',${item.paid})">${item.paid?'OK':'PAY'}</button>` : ''}
+                        <button class="btn-del-x" onclick="del('${w.key}','${type}','${id}')">×</button>
+                    </div>`;
+                }).join('');
+            };
+
+            const billsHTML = buildRows('bills');
+            const incHTML = buildRows('income');
+            
+            container.innerHTML += `
+                <div class="week-box">
+                    <div class="week-header"><span>WEEK ${w.key.toUpperCase()}</span><span>${w.start.getDate()} ${monthNames[w.start.getMonth()]} - ${w.end.getDate()} ${monthNames[w.end.getMonth()]}</span></div>
+                    <div style="padding-bottom:10px">
+                        ${prevSurplus > 0 ? `<div class="surplus-banner"><span>✨ Surplus: $${money.format(prevSurplus)}</span><button class="btn-carry" onclick="addCO('${w.key}',${prevSurplus})">Add</button></div>` : ''}
+                        <div class="section-title">Bills</div>
+                        ${billsHTML}
+                        <div class="session-total">Total: $${money.format(wB)}</div>
+                        <button class="btn-add" onclick="add('${w.key}','bills')">+ ADD BILL</button>
+                        <div class="section-title">Income</div>
+                        ${incHTML}
+                        <div class="session-total">Total: $${money.format(wI)}</div>
+                        <button class="btn-add" style="background:var(--success)" onclick="add('${w.key}','income')">+ ADD INCOME</button>
+                    </div>
+                </div>`;
+            prevSurplus = (wI - wB) > 0 ? (wI - wB) : 0;
+        });
+
+        document.getElementById('totalBills').innerText = '$' + money.format(mBills);
+        document.getElementById('totalIncome').innerText = '$' + money.format(mInc);
+        document.getElementById('monthlyRemaining').innerText = '$' + money.format(mInc - mBills);
+    }
+
+    function getDayOpts(week, current) {
+        let opts = ''; let d = new Date(week.start);
+        for(let i=0; i<7; i++) {
+            let val = `${d.getDate()} ${monthNames[d.getMonth()]}`;
+            opts += `<option value="${val}" ${val===current?'selected':''}>${d.getDate()}</option>`;
+            d.setDate(d.getDate()+1);
+        }
+        return opts;
+    }
+
+    function add(wk, t) { db.ref(`data/${yS.value}/${mS.value}/${wk}/${t}`).push({ date: '', ven: '', amt: 0, paid: false }); }
+    function upd(wk, t, id, f, v) { db.ref(`data/${yS.value}/${mS.value}/${wk}/${t}/${id}`).update({ [f]: v }); }
+    function pay(wk, id, c) { db.ref(`data/${yS.value}/${mS.value}/${wk}/bills/${id}`).update({ paid: !c }); }
+    function del(wk, t, id) { if(confirm("Delete?")) db.ref(`data/${yS.value}/${mS.value}/${wk}/${t}/${id}`).remove(); }
+    function addCO(wk, val) { db.ref(`data/${yS.value}/${mS.value}/${wk}/income`).push({ date: '1', ven: 'Carry Over Surplus', amt: val }); }
+
+    firebase.auth().onAuthStateChanged(user => { if (user) initLoad(); else firebase.auth().signInAnonymously(); });
+</script>
+<style> @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } } </style>
+</body>
+</html>
