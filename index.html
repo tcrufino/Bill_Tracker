@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Bill Tracker Master</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    
+    <style>
+        :root { --primary: #2c3e50; --header-blue: #3498db; --success: #27ae60; --danger: #e74c3c; --paid-bg: #e8f5e9; --dark-navy: #34495e; --surplus-teal: #16a085; }
+        body { font-family: -apple-system, sans-serif; background: #eef2f5; margin: 0; padding: 12px; padding-bottom: 120px; -webkit-tap-highlight-color: transparent; }
+        
+        /* Loader discreto para não travar a tela se a conexão demorar */
+        #loading-screen { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.9); display:none; flex-direction:column; justify-content:center; align-items:center; z-index:10000; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid var(--header-blue); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .top-nav { background: var(--primary); padding: 12px; border-radius: 12px; display: flex; gap: 8px; margin-bottom: 15px; position: sticky; top: 0; z-index: 1000; }
+        .btn-db { background: #f39c12; color: white; text-decoration: none; padding: 0 15px; border-radius: 8px; font-weight: 800; font-size: 11px; height: 42px; display: flex; align-items: center; text-transform: uppercase; }
+        select { flex: 1; height: 42px; border-radius: 8px; border: none; font-weight: bold; font-size: 15px; padding-left: 10px; background: white; }
+
+        .s-container { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+        .card { background: white; padding: 15px; border-radius: 15px; text-align: center; border-left: 5px solid var(--header-blue); box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .card b { display: block; font-size: 10px; color: #7f8c8d; text-transform: uppercase; margin-bottom: 5px; }
+        .card span { font-size: 22px; font-weight: 800; }
+
+        .week-box { background: white; border-radius: 15px; margin-bottom: 20px; border: 1px solid #ddd; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .week-h { background: var(--header-blue); color: white; padding: 14px 15px; font-weight: 800; font-size: 14px; display: flex; justify-content: space-between; }
+        
+        .row { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; padding: 4px 10px; }
+        .row.is-paid-row { background: var(--paid-bg); border-radius: 10px; }
+        
+        .day { width: 85px; font-size: 12px; height: 40px; border: 1px solid #eee; border-radius: 8px; background: #f9f9f9; }
+        .ven { flex: 1; font-size: 13px; height: 40px; border: 1px solid #eee; border-radius: 8px; padding: 0 10px; }
+        .amt { width: 100px; font-size: 15px; text-align: right; height: 40px; border: 1px solid #eee; border-radius: 8px; font-weight: bold; }
+        
+        .btn-p { background: var(--dark-navy); color: white; border: none; border-radius: 8px; font-weight: 800; font-size: 11px; width: 50px; height: 40px; }
+        .btn-p.active-paid { background: var(--success); }
+
+        .btn-new { background: var(--header-blue); color: white; border: none; padding: 15px; border-radius: 10px; font-weight: 800; width: 100%; margin-top: 10px; font-size: 12px; }
+        
+        .footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--primary); padding: 20px; text-align: center; z-index: 2000; padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+        .footer span { font-size: 32px; font-weight: 900; color: white; }
+    </style>
+</head>
+<body>
+
+<div id="loading-screen"><div class="spinner"></div><p>Syncing...</p></div>
+
+<div class="top-nav">
+    <a href="database.html" class="btn-db">DATABASE</a>
+    <select id="ySel" onchange="load()"></select>
+    <select id="mSel" onchange="load()"></select>
+</div>
+
+<div class="s-container">
+    <div class="card"><b>Total Bills</b><span id="tBills" style="color:var(--danger)">$0.00</span></div>
+    <div class="card"><b>Total Income</b><span id="tInc" style="color:var(--success)">$0.00</span></div>
+</div>
+
+<div id="main"></div>
+
+<div class="footer">
+    <label style="color:#bdc3c7; font-size:10px; display:block; font-weight:800;">MONTHLY REMAINING</label>
+    <span id="mRem">$0.00</span>
+</div>
+
+<script>
+    const config = { 
+        apiKey: "AIzaSyBsnuuEo8KSHb7taPQMpEJw8XkQVv3qW6k", 
+        authDomain: "billtrackersync-88b7a.firebaseapp.com", 
+        databaseURL: "https://billtrackersync-88b7a-default-rtdb.firebaseio.com", 
+        projectId: "billtrackersync-88b7a"
+    };
+    firebase.initializeApp(config);
+    const db = firebase.database();
+    const auth = firebase.auth();
+
+    auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const fmt = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    
+    for(let y=2019; y<=2067; y++) document.getElementById('ySel').innerHTML += `<option value="${y}">${y}</option>`;
+    months.forEach((m, i) => document.getElementById('mSel').innerHTML += `<option value="${i}">${m}</option>`);
+    
+    document.getElementById('ySel').value = localStorage.getItem('y') || 2025;
+    document.getElementById('mSel').value = localStorage.getItem('m') || 11;
+
+    function load() {
+        const y = document.getElementById('ySel').value;
+        const m = document.getElementById('mSel').value;
+        localStorage.setItem('y', y); localStorage.setItem('m', m);
+        
+        // Listener persistente que não trava a interface
+        db.ref(`data/${y}/${m}`).on('value', snap => {
+            render(y, m, snap.val() || {});
+        });
+    }
+
+    function render(y, m, data) {
+        const container = document.getElementById('main');
+        container.innerHTML = '';
+        
+        // Lógica de semanas para 2019-2067
+        let first = new Date(y, m, 1);
+        let curr = new Date(first);
+        curr.setDate(first.getDate() - first.getDay());
+
+        for (let i = 0; i < 6; i++) {
+            let start = new Date(curr);
+            let end = new Date(curr); end.setDate(start.getDate() + 6);
+            if (start.getMonth() == m || end.getMonth() == m) {
+                let wk = 'w'+(i+1);
+                let wData = data[wk] || {};
+                container.innerHTML += `
+                <div class="week-box">
+                    <div class="week-h"><span>WEEK ${wk.toUpperCase()}</span><span>${start.getDate()} ${months[start.getMonth()]} - ${end.getDate()} ${months[end.getMonth()]}</span></div>
+                    <div style="padding:10px">
+                        <div id="list-b-${wk}">${renderType(y, m, wk, wData, 'bills', start)}</div>
+                        <button class="btn-new" onclick="add('${y}','${m}','${wk}','bills')">+ ADD BILL</button>
+                        <div id="list-i-${wk}" style="margin-top:20px">${renderType(y, m, wk, wData, 'income', start)}</div>
+                        <button class="btn-new" style="background:var(--success)" onclick="add('${y}','${m}','${wk}','income')">+ ADD INCOME</button>
+                    </div>
+                </div>`;
+            }
+            curr.setDate(curr.getDate() + 7);
+        }
+        updateTotals();
+    }
+
+    function renderType(y, m, wk, wData, type, start) {
+        return Object.entries(wData[type] || {}).map(([id, item]) => `
+            <div class="row ${item.paid?'is-paid-row':''}">
+                <select class="day" onchange="upd('${y}','${m}','${wk}','${type}','${id}','date',this.value)">${getDays(start, item.date)}</select>
+                <input class="ven" type="text" value="${item.ven||''}" placeholder="Item" onchange="upd('${y}','${m}','${wk}','${type}','${id}','ven',this.value)">
+                <input class="amt" type="number" step="0.01" value="${item.amt||''}" placeholder="0.00" oninput="upd('${y}','${m}','${wk}','${type}','${id}','amt',this.value)">
+                ${type=='bills'?`<button class="btn-p ${item.paid?'active-paid':''}" onclick="pay('${y}','${m}','${wk}','${id}',${item.paid})">${item.paid?'OK':'PAY'}</button>`:''}
+                <button onclick="del('${y}','${m}','${wk}','${type}','${id}')" style="border:none;background:none;color:#ccc;font-size:20px">×</button>
+            </div>`).join('');
+    }
+
+    function getDays(s, curr) {
+        let o = ''; let d = new Date(s);
+        for(let i=0; i<7; i++) {
+            let v = `${d.getDate()} ${months[d.getMonth()]}`;
+            o += `<option value="${v}" ${v==curr?'selected':''}>${v}</option>`;
+            d.setDate(d.getDate()+1);
+        }
+        return o;
+    }
+
+    function add(y,m,wk,t) { db.ref(`data/${y}/${m}/${wk}/${t}`).push({ven:'', amt:0, paid:false}); }
+    function upd(y,m,wk,t,id,f,v) { db.ref(`data/${y}/${m}/${wk}/${t}/${id}`).update({[f]:v}); updateTotals(); }
+    function pay(y,m,wk,id,c) { db.ref(`data/${y}/${m}/${wk}/bills/${id}`).update({paid:!c}); }
+    function del(y,m,wk,t,id) { if(confirm('Delete?')) db.ref(`data/${y}/${m}/${wk}/${t}/${id}`).remove(); }
+
+    function updateTotals() {
+        let b = 0, i = 0;
+        document.querySelectorAll('.amt').forEach(input => {
+            let v = parseFloat(input.value) || 0;
+            if(input.parentElement.querySelector('.btn-p')) b += v; else i += v;
+        });
+        document.getElementById('tBills').innerText = '$' + fmt.format(b);
+        document.getElementById('tInc').innerText = '$' + fmt.format(i);
+        document.getElementById('mRem').innerText = '$' + fmt.format(i - b);
+    }
+
+    auth.onAuthStateChanged(u => { if(u) load(); else auth.signInAnonymously(); });
+</script>
+</body>
+</html>
